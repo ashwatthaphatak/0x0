@@ -1,0 +1,54 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# Build artifacts
+dist/
+build/
+.eggs/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+.venv_deepfake/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Local outputs and downloaded model artifacts
+results/
+stargan_celeba_128/
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# Editor/OS files
+.DS_Store
+.vscode/
+.idea/
