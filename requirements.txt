@@ -1,0 +1,14 @@
+torch
+torchvision
+torchaudio
+opencv-python
+scikit-image
+matplotlib
+seaborn
+pillow
+numpy
+scipy
+tqdm
+lpips
+gradio==3.50.2
+requests
