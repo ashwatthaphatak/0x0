@@ -2,7 +2,7 @@
 
 Repository for the 2026 Edition of HackNCState
 
-Team Memebers 
+Team Memebers
 
 Ashwattha Phatak
 
@@ -19,6 +19,7 @@ python3 run_defense.py --mode demo --image sample_images/sample_0.jpg --attribut
 ```
 
 Outputs are written to `results/`:
+
 - `results/step1_attention.png`
 - `results/step2_perturbation.png`
 - `results/final_comparison.png`
@@ -28,3 +29,10 @@ Optional Gradio app:
 ```bash
 python3 run_defense.py --mode gradio --share
 ```
+
+GPU dependant -> Mac version (MPS)
+
+1. Replaced CUDA-only device logic with a portable backend chooser: cuda (if present) → mps (Apple Metal on Mac) → cpu, and enabled PYTORCH_ENABLE_MPS_FALLBACK=1 so unsupported MPS ops automatically fall back to CPU.
+2. Removed hardcoded device resets in later StarGAN cells, so the notebook no longer accidentally switches back to CUDA/CPU-only paths; checkpoint loading is done with map_location="cpu" for portability.
+3. Made LPIPS non-blocking (and skipped by default), because it is not used in the defense math path; this removes the runtime failure/download path and avoids requiring CUDA-linked behavior for that component.
+4. Reworked setup into a managed .venv_deepfake flow (create/reuse + kernel registration) with notebook-safe installs, so the same Mac-compatible environment is reused every run without CUDA-specific install assumptions.
