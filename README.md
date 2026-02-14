@@ -2,7 +2,7 @@
 
 Repository for the 2026 Edition of HackNCState
 
-Team Memebers 
+Team Members 
 
 Ashwattha Phatak
 
