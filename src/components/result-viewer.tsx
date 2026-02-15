@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent } from "react";
 import type { ProtectionResult } from "@/types";
 import { localPathToUrl, saveFileDialog, saveResultToPath } from "@/lib/tauri-bridge";
 
@@ -8,6 +8,237 @@ interface ResultViewerProps {
   original: string;
   result: ProtectionResult;
   onReset: () => void;
+}
+
+const RIPPLE_RADIUS_PX = 46;
+const RIPPLE_FALLOFF_PX = 120;
+
+function clamp01(value: number): number {
+  return Math.max(0, Math.min(1, value));
+}
+
+function jetColor(value: number): { r: number; g: number; b: number } {
+  const x = clamp01(value);
+  const stops = [
+    { p: 0.0, c: [8, 35, 255] },
+    { p: 0.35, c: [0, 196, 255] },
+    { p: 0.65, c: [255, 230, 0] },
+    { p: 1.0, c: [255, 55, 0] },
+  ] as const;
+
+  for (let i = 0; i < stops.length - 1; i++) {
+    const left = stops[i];
+    const right = stops[i + 1];
+    if (x >= left.p && x <= right.p) {
+      const t = (x - left.p) / (right.p - left.p || 1);
+      return {
+        r: Math.round(left.c[0] + (right.c[0] - left.c[0]) * t),
+        g: Math.round(left.c[1] + (right.c[1] - left.c[1]) * t),
+        b: Math.round(left.c[2] + (right.c[2] - left.c[2]) * t),
+      };
+    }
+  }
+
+  return { r: 255, g: 55, b: 0 };
+}
+
+async function loadBitmap(src: string): Promise<ImageBitmap> {
+  const response = await fetch(src);
+  if (!response.ok) {
+    throw new Error(`Failed to load image: ${response.status}`);
+  }
+  const blob = await response.blob();
+  return createImageBitmap(blob);
+}
+
+async function buildHeatmapOverlay(originalSrc: string, protectedSrc: string): Promise<string> {
+  const [originalBitmap, protectedBitmap] = await Promise.all([
+    loadBitmap(originalSrc),
+    loadBitmap(protectedSrc),
+  ]);
+
+  try {
+    const width = Math.max(64, Math.min(1024, protectedBitmap.width || originalBitmap.width));
+    const height = Math.max(64, Math.min(1024, protectedBitmap.height || originalBitmap.height));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    if (!ctx) {
+      throw new Error("Canvas context unavailable");
+    }
+
+    ctx.drawImage(originalBitmap, 0, 0, width, height);
+    const originalPixels = ctx.getImageData(0, 0, width, height);
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(protectedBitmap, 0, 0, width, height);
+    const protectedPixels = ctx.getImageData(0, 0, width, height);
+
+    const output = ctx.createImageData(width, height);
+    const deltas = new Float32Array(width * height);
+    let maxDelta = 0;
+
+    for (let idx = 0, px = 0; idx < originalPixels.data.length; idx += 4, px++) {
+      const dr = Math.abs(originalPixels.data[idx] - protectedPixels.data[idx]);
+      const dg = Math.abs(originalPixels.data[idx + 1] - protectedPixels.data[idx + 1]);
+      const db = Math.abs(originalPixels.data[idx + 2] - protectedPixels.data[idx + 2]);
+
+      const delta = (dr + dg + db) / 765;
+      deltas[px] = delta;
+      if (delta > maxDelta) maxDelta = delta;
+    }
+
+    const floor = Math.max(0.01, maxDelta * 0.08);
+    const span = Math.max(0.0001, maxDelta - floor);
+
+    for (let idx = 0, px = 0; idx < output.data.length; idx += 4, px++) {
+      const normalized = clamp01((deltas[px] - floor) / span);
+      if (normalized <= 0) {
+        output.data[idx + 3] = 0;
+        continue;
+      }
+
+      const intensity = Math.pow(normalized, 0.35);
+      const color = jetColor(Math.min(1, intensity * 1.45));
+      const originalR = originalPixels.data[idx];
+      const originalG = originalPixels.data[idx + 1];
+      const originalB = originalPixels.data[idx + 2];
+      const blend = 0.99;
+
+      output.data[idx] = Math.round(originalR * (1 - blend) + color.r * blend);
+      output.data[idx + 1] = Math.round(originalG * (1 - blend) + color.g * blend);
+      output.data[idx + 2] = Math.round(originalB * (1 - blend) + color.b * blend);
+      output.data[idx + 3] = Math.round(255 * Math.pow(intensity, 0.5));
+    }
+
+    ctx.clearRect(0, 0, width, height);
+    ctx.putImageData(output, 0, 0);
+    return canvas.toDataURL("image/png");
+  } finally {
+    originalBitmap.close();
+    protectedBitmap.close();
+  }
+}
+
+interface InteractiveHeatmapPreviewProps {
+  originalSrc: string;
+  protectedSrc: string;
+  onImageError: () => void;
+}
+
+function InteractiveHeatmapPreview({ originalSrc, protectedSrc, onImageError }: InteractiveHeatmapPreviewProps) {
+  const [heatmapUrl, setHeatmapUrl] = useState<string | null>(null);
+  const [isHovering, setIsHovering] = useState(false);
+  const [cursor, setCursor] = useState({ x: 50, y: 50 });
+  const [canHover, setCanHover] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setCanHover(window.matchMedia("(hover: hover) and (pointer: fine)").matches);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setHeatmapUrl(null);
+
+    const build = async () => {
+      try {
+        const overlay = await buildHeatmapOverlay(originalSrc, protectedSrc);
+        if (!cancelled) {
+          setHeatmapUrl(overlay);
+        }
+      } catch {
+        if (!cancelled) {
+          setHeatmapUrl(null);
+        }
+      }
+    };
+
+    void build();
+    return () => {
+      cancelled = true;
+    };
+  }, [originalSrc, protectedSrc]);
+
+  const updateCursor = useCallback((event: PointerEvent<HTMLDivElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+
+    const x = clamp01((event.clientX - rect.left) / rect.width) * 100;
+    const y = clamp01((event.clientY - rect.top) / rect.height) * 100;
+    setCursor({ x, y });
+  }, []);
+
+  const overlayMask: CSSProperties | undefined =
+    heatmapUrl && canHover
+      ? {
+          WebkitMaskImage: `radial-gradient(circle ${RIPPLE_FALLOFF_PX}px at ${cursor.x}% ${cursor.y}%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) ${Math.round((RIPPLE_RADIUS_PX / RIPPLE_FALLOFF_PX) * 100)}%, rgba(0, 0, 0, 0.72) 38%, rgba(0, 0, 0, 0.2) 48%, rgba(0, 0, 0, 0) 58%)`,
+          maskImage: `radial-gradient(circle ${RIPPLE_FALLOFF_PX}px at ${cursor.x}% ${cursor.y}%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) ${Math.round((RIPPLE_RADIUS_PX / RIPPLE_FALLOFF_PX) * 100)}%, rgba(0, 0, 0, 0.72) 38%, rgba(0, 0, 0, 0.2) 48%, rgba(0, 0, 0, 0) 58%)`,
+        }
+      : undefined;
+  const dimmingOverlay: CSSProperties | undefined =
+    heatmapUrl && canHover
+      ? {
+          ...overlayMask,
+          backgroundImage: [
+            `radial-gradient(circle at ${cursor.x}% ${cursor.y}%, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.62) 18%, rgba(0, 0, 0, 0.36) 34%, rgba(0, 0, 0, 0.22) 49%, rgba(0, 0, 0, 0.1) 60%, rgba(0, 0, 0, 0) 74%)`,
+            `repeating-radial-gradient(circle at ${cursor.x}% ${cursor.y}%, rgba(0, 0, 0, 0.16) 0px, rgba(0, 0, 0, 0.16) 7px, rgba(0, 0, 0, 0.04) 13px, rgba(0, 0, 0, 0.04) 22px)`,
+          ].join(", "),
+        }
+      : undefined;
+
+  return (
+    <div
+      className="relative h-full w-full"
+      onPointerEnter={(event) => {
+        if (!heatmapUrl || !canHover) return;
+        setIsHovering(true);
+        updateCursor(event);
+      }}
+      onPointerMove={(event) => {
+        if (!heatmapUrl || !canHover) return;
+        updateCursor(event);
+      }}
+      onPointerLeave={() => setIsHovering(false)}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={protectedSrc}
+        alt="Sanitized"
+        className="h-full w-full object-contain"
+        onError={onImageError}
+      />
+
+      {heatmapUrl && canHover && (
+        <>
+          <div
+            aria-hidden
+            className={[
+              "pointer-events-none absolute inset-0 transition-opacity duration-150",
+              isHovering ? "opacity-100" : "opacity-0",
+            ].join(" ")}
+            style={dimmingOverlay}
+          />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={heatmapUrl}
+            alt=""
+            aria-hidden
+            className={[
+              "pointer-events-none absolute inset-0 h-full w-full object-contain transition-opacity duration-150",
+              isHovering ? "opacity-100" : "opacity-0",
+            ].join(" ")}
+            style={overlayMask}
+          />
+          <div className="pointer-events-none absolute bottom-2 left-2 rounded-md bg-black/60 px-2 py-1 text-[10px] font-medium text-indigo-200">
+            Hover to inspect affected-pixel heatmap
+          </div>
+        </>
+      )}
+    </div>
+  );
 }
 
 export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
@@ -131,12 +362,10 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
           <div className="mb-2 text-xs font-medium uppercase tracking-wider text-indigo-300">Sanitized</div>
           <div className="h-64 overflow-hidden rounded-xl bg-black">
             {protectedUrl ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={protectedUrl}
-                alt="Sanitized"
-                className="h-full w-full object-contain"
-                onError={() => {
+              <InteractiveHeatmapPreview
+                originalSrc={original}
+                protectedSrc={protectedUrl}
+                onImageError={() => {
                   setProtectedUrl("");
                   setPreviewErr("Could not preview sanitized image.");
                 }}
