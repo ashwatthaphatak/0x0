@@ -46,3 +46,4 @@ python_engine/.mypy_cache/
 
 # Accidental local path typo artifact observed in repo
 {src-tauri/
+.modal.toml
