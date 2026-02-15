@@ -46,7 +46,19 @@ export interface Metrics {
   L2: number;
 }
 
-export type DeepfakeAttackType = "blonde_hair" | "old_age" | "male";
+export type DeepfakeAttackType =
+  | "black_hair_female_old"
+  | "black_hair_female_young"
+  | "black_hair_male_old"
+  | "black_hair_male_young"
+  | "blonde_hair_female_old"
+  | "blonde_hair_female_young"
+  | "blonde_hair_male_old"
+  | "blonde_hair_male_young"
+  | "brown_hair_female_old"
+  | "brown_hair_female_young"
+  | "brown_hair_male_old"
+  | "brown_hair_male_young";
 
 export interface DeepfakeAttackOption {
   value: DeepfakeAttackType;
@@ -56,19 +68,64 @@ export interface DeepfakeAttackOption {
 
 export const DEEPFAKE_ATTACK_OPTIONS: DeepfakeAttackOption[] = [
   {
-    value: "blonde_hair",
-    label: "Blonde Hair",
-    description: "StarGAN attempts a blonde hair attribute edit",
+    value: "black_hair_female_old",
+    label: "Black Hair + Female + Old",
+    description: "Target vector: Black Hair, Female, Old",
   },
   {
-    value: "old_age",
-    label: "Old Age",
-    description: "StarGAN attempts an age transformation",
+    value: "black_hair_female_young",
+    label: "Black Hair + Female + Young",
+    description: "Target vector: Black Hair, Female, Young",
   },
   {
-    value: "male",
-    label: "Male",
-    description: "StarGAN attempts a gender attribute edit",
+    value: "black_hair_male_old",
+    label: "Black Hair + Male + Old",
+    description: "Target vector: Black Hair, Male, Old",
+  },
+  {
+    value: "black_hair_male_young",
+    label: "Black Hair + Male + Young",
+    description: "Target vector: Black Hair, Male, Young",
+  },
+  {
+    value: "blonde_hair_female_old",
+    label: "Blonde Hair + Female + Old",
+    description: "Target vector: Blonde Hair, Female, Old",
+  },
+  {
+    value: "blonde_hair_female_young",
+    label: "Blonde Hair + Female + Young",
+    description: "Target vector: Blonde Hair, Female, Young",
+  },
+  {
+    value: "blonde_hair_male_old",
+    label: "Blonde Hair + Male + Old",
+    description: "Target vector: Blonde Hair, Male, Old",
+  },
+  {
+    value: "blonde_hair_male_young",
+    label: "Blonde Hair + Male + Young",
+    description: "Target vector: Blonde Hair, Male, Young",
+  },
+  {
+    value: "brown_hair_female_old",
+    label: "Brown Hair + Female + Old",
+    description: "Target vector: Brown Hair, Female, Old",
+  },
+  {
+    value: "brown_hair_female_young",
+    label: "Brown Hair + Female + Young",
+    description: "Target vector: Brown Hair, Female, Young",
+  },
+  {
+    value: "brown_hair_male_old",
+    label: "Brown Hair + Male + Old",
+    description: "Target vector: Brown Hair, Male, Old",
+  },
+  {
+    value: "brown_hair_male_young",
+    label: "Brown Hair + Male + Young",
+    description: "Target vector: Brown Hair, Male, Young",
   },
 ];
 

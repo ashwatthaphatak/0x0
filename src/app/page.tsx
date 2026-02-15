@@ -29,7 +29,6 @@ type AppStage =
   | "complete"     // done
   | "error";
 
-const STORAGE_KEY_MODE  = "deepfake-defense:compute-mode";
 const STORAGE_KEY_LEVEL = "deepfake-defense:protection-level";
 
 function readPersisted<T>(key: string, fallback: T): T {
@@ -45,12 +44,12 @@ function readPersisted<T>(key: string, fallback: T): T {
 
 export default function HomePage() {
   // Persisted settings
-  const [mode,  setModeState]  = useState<ComputeMode>(()    => readPersisted(STORAGE_KEY_MODE,  "local"));
+  const [mode,  setModeState]  = useState<ComputeMode>("local");
   const [level, setLevelState] = useState<ProtectionLevel>(() => readPersisted(STORAGE_KEY_LEVEL, "medium"));
 
   const setMode = useCallback((m: ComputeMode) => {
-    setModeState(m);
-    localStorage.setItem(STORAGE_KEY_MODE, JSON.stringify(m));
+    if (m !== "local") return;
+    setModeState("local");
   }, []);
 
   const setLevel = useCallback((l: ProtectionLevel) => {
@@ -226,7 +225,7 @@ export default function HomePage() {
             <p className="text-xs text-slate-500 leading-relaxed">
               Upload a photo and click <strong className="text-slate-400">Sanitize</strong>.
               We inject an imperceptible adversarial perturbation into texture regions,
-              breaking deepfake generators <em>before</em> they can manipulate your image.
+              breaking deepfake filters <em>before</em> they can manipulate your image.
             </p>
           </div>
 
@@ -432,7 +431,7 @@ export default function HomePage() {
                 </p>
                 {mode === "local" && (
                   <p className="text-xs text-slate-500 mt-3">
-                    Tip: Try switching to Cloud mode if the local engine is not responding.
+                    Tip: Local compute is active. Cloud mode is coming soon.
                   </p>
                 )}
               </div>

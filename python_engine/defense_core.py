@@ -2,7 +2,7 @@
 DeepFake Defense Core Engine
 Implements Texture Feature Perturbation (TFP) based on Zhang et al., 2025.
 Uses GradCAM attention maps + texture feature extraction to generate
-imperceptible adversarial perturbations that break deepfake generators.
+imperceptible adversarial perturbations that break deepfake filters.
 """
 
 import sys

@@ -32,17 +32,43 @@ DEFAULT_ATTACK_SIZE = 256
 ENV_STARGAN_CKPT = "DEEPFAKE_DEFENSE_STARGAN_CKPT"
 ENV_STARGAN_ZIP = "DEEPFAKE_DEFENSE_STARGAN_ZIP"
 
+# CelebA checkpoint attribute order: [Black_Hair, Blond_Hair, Brown_Hair, Male, Young]
+_CANONICAL_PRESETS: dict[str, tuple[str, list[float]]] = {
+    "black_hair_female_old": ("Black Hair + Female + Old", [1.0, 0.0, 0.0, 0.0, 0.0]),
+    "black_hair_female_young": ("Black Hair + Female + Young", [1.0, 0.0, 0.0, 0.0, 1.0]),
+    "black_hair_male_old": ("Black Hair + Male + Old", [1.0, 0.0, 0.0, 1.0, 0.0]),
+    "black_hair_male_young": ("Black Hair + Male + Young", [1.0, 0.0, 0.0, 1.0, 1.0]),
+    "blonde_hair_female_old": ("Blonde Hair + Female + Old", [0.0, 1.0, 0.0, 0.0, 0.0]),
+    "blonde_hair_female_young": ("Blonde Hair + Female + Young", [0.0, 1.0, 0.0, 0.0, 1.0]),
+    "blonde_hair_male_old": ("Blonde Hair + Male + Old", [0.0, 1.0, 0.0, 1.0, 0.0]),
+    "blonde_hair_male_young": ("Blonde Hair + Male + Young", [0.0, 1.0, 0.0, 1.0, 1.0]),
+    "brown_hair_female_old": ("Brown Hair + Female + Old", [0.0, 0.0, 1.0, 0.0, 0.0]),
+    "brown_hair_female_young": ("Brown Hair + Female + Young", [0.0, 0.0, 1.0, 0.0, 1.0]),
+    "brown_hair_male_old": ("Brown Hair + Male + Old", [0.0, 0.0, 1.0, 1.0, 0.0]),
+    "brown_hair_male_young": ("Brown Hair + Male + Young", [0.0, 0.0, 1.0, 1.0, 1.0]),
+}
+
 ATTRIBUTES: dict[str, list[float]] = {
-    # [Black_Hair, Blond_Hair, Brown_Hair, Male, Young]
-    "blonde_hair": [0.0, 1.0, 0.0, 0.0, 0.0],
-    "old_age": [0.0, 0.0, 0.0, 0.0, 0.0],
-    "male": [0.0, 0.0, 0.0, 1.0, 0.0],
+    key: value for key, (_label, value) in _CANONICAL_PRESETS.items()
 }
 
 ATTACK_LABELS: dict[str, str] = {
-    "blonde_hair": "Blonde Hair",
-    "old_age": "Old Age",
-    "male": "Male",
+    key: label for key, (label, _value) in _CANONICAL_PRESETS.items()
+}
+
+ALIAS_TO_CANONICAL: dict[str, str] = {
+    # Backward-compatible aliases used by existing UI/CLI defaults.
+    "blonde": "blonde_hair_female_old",
+    "blond_hair": "blonde_hair_female_old",
+    "blonde_hair": "blonde_hair_female_old",
+    "black_hair": "black_hair_female_old",
+    "brown_hair": "brown_hair_female_old",
+    "old": "brown_hair_female_old",
+    "old_age": "brown_hair_female_old",
+    "young": "brown_hair_female_young",
+    "young_age": "brown_hair_female_young",
+    "female": "brown_hair_female_young",
+    "male": "brown_hair_male_young",
 }
 
 _MODEL_CACHE: dict[str, object] = {
@@ -115,19 +141,19 @@ class StarGANGenerator(nn.Module):
 
 
 def normalize_attack_type(attack_type: str | None) -> str:
-    raw = (attack_type or "").strip().lower().replace(" ", "_")
-    aliases = {
-        "blonde": "blonde_hair",
-        "blond_hair": "blonde_hair",
-        "blonde_hair": "blonde_hair",
-        "old": "old_age",
-        "old_age": "old_age",
-        "male": "male",
-    }
-    canonical = aliases.get(raw, raw)
+    raw = (attack_type or "").strip().lower()
+    raw = raw.replace(" ", "_").replace("+", "_").replace("-", "_")
+    while "__" in raw:
+        raw = raw.replace("__", "_")
+
+    canonical = ALIAS_TO_CANONICAL.get(raw, raw)
     if canonical not in ATTRIBUTES:
-        supported = ", ".join(sorted(ATTRIBUTES))
-        raise ValueError(f"Unsupported attack type: {attack_type}. Supported: {supported}")
+        canonical_keys = sorted(ATTRIBUTES)
+        alias_keys = sorted(ALIAS_TO_CANONICAL)
+        supported = ", ".join(canonical_keys + alias_keys)
+        raise ValueError(
+            f"Unsupported attack type: {attack_type}. Supported: {supported}"
+        )
     return canonical
 
 

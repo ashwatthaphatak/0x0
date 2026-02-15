@@ -177,8 +177,11 @@ def main() -> None:
     parser.add_argument("--protected", help="Path to sanitized image (attack mode)")
     parser.add_argument(
         "--attack-type",
-        default="blonde_hair",
-        help="Attack type: blonde_hair, old_age, male (attack mode)",
+        default="blonde_hair_female_old",
+        help=(
+            "Attack preset for CelebA-5 StarGAN (attack mode). "
+            "Example: blonde_hair_male_young, black_hair_female_old, brown_hair_male_old."
+        ),
     )
     parser.add_argument(
         "--output-dir",

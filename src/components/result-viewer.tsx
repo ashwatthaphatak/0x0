@@ -406,24 +406,45 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-700/80 bg-slate-900/70 p-3">
+        <div
+          className="rounded-2xl border border-slate-700/80 bg-slate-900/70 p-3 transition-colors hover:border-slate-500/80 cursor-zoom-in"
+          onClick={() => setExpandedView("original")}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setExpandedView("original");
+            }
+          }}
+          aria-label="Enlarge original image"
+        >
           <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400">Original</div>
           <div className="relative h-64 overflow-hidden rounded-xl bg-black">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={original} alt="Original" className="h-full w-full object-contain" />
-            <button
-              type="button"
-              onClick={() => setExpandedView("original")}
-              className="absolute right-2 top-2 rounded-md border border-white/20 bg-black/55 p-1.5 text-white/90 transition-colors hover:bg-black/75"
-              aria-label="Expand original image"
-              title="Expand"
-            >
-              <ExpandIcon />
-            </button>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-indigo-700/70 bg-indigo-950/20 p-3">
+        <div
+          className={[
+            "rounded-2xl border border-indigo-700/70 bg-indigo-950/20 p-3 transition-colors",
+            protectedUrl ? "cursor-zoom-in hover:border-indigo-500/80" : "cursor-default",
+          ].join(" ")}
+          onClick={() => {
+            if (protectedUrl) setExpandedView("sanitized");
+          }}
+          role={protectedUrl ? "button" : undefined}
+          tabIndex={protectedUrl ? 0 : -1}
+          onKeyDown={(event) => {
+            if (!protectedUrl) return;
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setExpandedView("sanitized");
+            }
+          }}
+          aria-label={protectedUrl ? "Enlarge sanitized image" : undefined}
+        >
           <div className="mb-2 text-xs font-medium uppercase tracking-wider text-indigo-300">Sanitized</div>
           <div className="relative h-64 overflow-hidden rounded-xl bg-black">
             {protectedUrl ? (
@@ -438,18 +459,6 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
             ) : (
               <div className="flex h-full items-center justify-center text-xs text-slate-500">Loading preview...</div>
             )}
-            <button
-              type="button"
-              onClick={() => {
-                if (protectedUrl) setExpandedView("sanitized");
-              }}
-              className="absolute right-2 top-2 rounded-md border border-white/20 bg-black/55 p-1.5 text-white/90 transition-colors hover:bg-black/75 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Expand sanitized image"
-              title="Expand"
-              disabled={!protectedUrl}
-            >
-              <ExpandIcon />
-            </button>
           </div>
         </div>
       </div>
@@ -513,19 +522,5 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
         </div>
       )}
     </div>
-  );
-}
-
-function ExpandIcon() {
-  return (
-    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
-      <path
-        d="M8 4H4V8M16 20H20V16M4 8L10 2M20 16L14 22"
-        stroke="currentColor"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
   );
 }

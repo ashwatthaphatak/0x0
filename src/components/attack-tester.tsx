@@ -15,12 +15,13 @@ interface AttackTesterProps {
 }
 
 export function AttackTester({ originalPath, sanitizedPath, isLocalResult }: AttackTesterProps) {
-  const [attackType, setAttackType] = useState<DeepfakeAttackType>("blonde_hair");
+  const [attackType, setAttackType] = useState<DeepfakeAttackType>("blonde_hair_female_old");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<DeepfakeAttackResult | null>(null);
   const [originalFakeUrl, setOriginalFakeUrl] = useState<string>("");
   const [sanitizedFakeUrl, setSanitizedFakeUrl] = useState<string>("");
+  const [expandedView, setExpandedView] = useState<"original" | "sanitized" | null>(null);
   const objectUrlsRef = useRef<string[]>([]);
 
   const releaseObjectUrls = useCallback(() => {
@@ -45,6 +46,7 @@ export function AttackTester({ originalPath, sanitizedPath, isLocalResult }: Att
     releaseObjectUrls();
     setOriginalFakeUrl("");
     setSanitizedFakeUrl("");
+    setExpandedView(null);
 
     if (!result) return;
 
@@ -71,6 +73,19 @@ export function AttackTester({ originalPath, sanitizedPath, isLocalResult }: Att
       releaseObjectUrls();
     };
   }, [releaseObjectUrls, resolveLocalImage, result]);
+
+  useEffect(() => {
+    if (!expandedView) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setExpandedView(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [expandedView]);
 
   const canRun = isLocalResult && Boolean(originalPath && sanitizedPath);
 
@@ -177,11 +192,29 @@ export function AttackTester({ originalPath, sanitizedPath, isLocalResult }: Att
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <div className="rounded-xl border border-red-700/60 bg-red-950/20 p-3">
+            <div
+              className={[
+                "rounded-xl border border-red-700/60 bg-red-950/20 p-3 transition-colors",
+                originalFakeUrl ? "cursor-zoom-in hover:border-red-600/80" : "cursor-default",
+              ].join(" ")}
+              onClick={() => {
+                if (originalFakeUrl) setExpandedView("original");
+              }}
+              role={originalFakeUrl ? "button" : undefined}
+              tabIndex={originalFakeUrl ? 0 : -1}
+              onKeyDown={(event) => {
+                if (!originalFakeUrl) return;
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setExpandedView("original");
+                }
+              }}
+              aria-label={originalFakeUrl ? "Enlarge deepfaked original image" : undefined}
+            >
               <div className="mb-2 text-xs font-medium uppercase tracking-wider text-red-300">
                 Original - Deepfaked
               </div>
-              <div className="h-56 overflow-hidden rounded-lg bg-black">
+              <div className="relative h-56 overflow-hidden rounded-lg bg-black">
                 {originalFakeUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={originalFakeUrl} alt="Deepfaked original" className="h-full w-full object-contain" />
@@ -191,11 +224,29 @@ export function AttackTester({ originalPath, sanitizedPath, isLocalResult }: Att
               </div>
             </div>
 
-            <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/20 p-3">
+            <div
+              className={[
+                "rounded-xl border border-emerald-700/60 bg-emerald-950/20 p-3 transition-colors",
+                sanitizedFakeUrl ? "cursor-zoom-in hover:border-emerald-600/80" : "cursor-default",
+              ].join(" ")}
+              onClick={() => {
+                if (sanitizedFakeUrl) setExpandedView("sanitized");
+              }}
+              role={sanitizedFakeUrl ? "button" : undefined}
+              tabIndex={sanitizedFakeUrl ? 0 : -1}
+              onKeyDown={(event) => {
+                if (!sanitizedFakeUrl) return;
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setExpandedView("sanitized");
+                }
+              }}
+              aria-label={sanitizedFakeUrl ? "Enlarge deepfake-attempt image" : undefined}
+            >
               <div className="mb-2 text-xs font-medium uppercase tracking-wider text-emerald-300">
                 Sanitized - Deepfake Attempt
               </div>
-              <div className="h-56 overflow-hidden rounded-lg bg-black">
+              <div className="relative h-56 overflow-hidden rounded-lg bg-black">
                 {sanitizedFakeUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -208,6 +259,36 @@ export function AttackTester({ originalPath, sanitizedPath, isLocalResult }: Att
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {expandedView && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
+          onClick={() => setExpandedView(null)}
+        >
+          <div
+            className="relative flex h-[92vh] w-[95vw] max-w-7xl items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-black"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {expandedView === "original" ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={originalFakeUrl} alt="Deepfaked original expanded" className="h-full w-full object-contain" />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={sanitizedFakeUrl} alt="Deepfake attempt expanded" className="h-full w-full object-contain" />
+            )}
+
+            <button
+              type="button"
+              onClick={() => setExpandedView(null)}
+              className="absolute right-3 top-3 rounded-md border border-white/20 bg-black/60 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-black/80"
+              aria-label="Close expanded preview"
+              title="Close"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}
