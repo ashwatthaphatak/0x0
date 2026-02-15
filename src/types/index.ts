@@ -45,3 +45,40 @@ export interface Metrics {
   SSIM: number;
   L2: number;
 }
+
+export type DeepfakeAttackType = "blonde_hair" | "old_age" | "male";
+
+export interface DeepfakeAttackOption {
+  value: DeepfakeAttackType;
+  label: string;
+  description: string;
+}
+
+export const DEEPFAKE_ATTACK_OPTIONS: DeepfakeAttackOption[] = [
+  {
+    value: "blonde_hair",
+    label: "Blonde Hair",
+    description: "StarGAN attempts a blonde hair attribute edit",
+  },
+  {
+    value: "old_age",
+    label: "Old Age",
+    description: "StarGAN attempts an age transformation",
+  },
+  {
+    value: "male",
+    label: "Male",
+    description: "StarGAN attempts a gender attribute edit",
+  },
+];
+
+export type DeepfakeVerdict = "blocked" | "partial" | "not_blocked" | "unknown";
+
+export interface DeepfakeAttackResult {
+  attackType: DeepfakeAttackType;
+  attackLabel: string;
+  originalFakePath: string;
+  sanitizedFakePath: string;
+  divergence: number;
+  verdict: DeepfakeVerdict;
+}

@@ -5,7 +5,13 @@
 
 mod commands;
 
-use commands::{check_sidecar_ready, cleanup_temp_dir, get_app_version, run_local_protection};
+use commands::{
+    check_sidecar_ready,
+    cleanup_temp_dir,
+    get_app_version,
+    run_local_deepfake_test,
+    run_local_protection,
+};
 use std::sync::Mutex;
 use tauri::{Manager, RunEvent};
 
@@ -53,6 +59,7 @@ pub fn run() {
         // ── Commands ─────────────────────────────────────────────────────────
         .invoke_handler(tauri::generate_handler![
             run_local_protection,
+            run_local_deepfake_test,
             check_sidecar_ready,
             cleanup_temp_dir,
             get_app_version,

@@ -20,6 +20,16 @@ pub struct ProtectionResult {
     pub score: f64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeepfakeAttackResult {
+    pub attack_type: String,
+    pub attack_label: String,
+    pub original_fake_path: String,
+    pub sanitized_fake_path: String,
+    pub divergence: f64,
+    pub verdict: String,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "type", content = "data", rename_all = "snake_case")]
 pub enum ProgressEvent {
@@ -176,6 +186,22 @@ fn sidecar_path(app: &AppHandle) -> anyhow::Result<std::path::PathBuf> {
     )
 }
 
+fn base_engine_command(app: &AppHandle) -> Result<Command, String> {
+    if let Some(script) = dev_python_engine_script() {
+        let python_bin = resolve_python_engine_bin()
+            .map_err(|e| format!("Local Python engine is not ready. {e}"))?;
+        log::info!("Using Python engine in dev mode: {}", script.display());
+        log::info!("Using Python interpreter for local engine: {}", python_bin);
+        let mut c = Command::new(&python_bin);
+        c.arg(script);
+        Ok(c)
+    } else {
+        let engine = sidecar_path(app).map_err(|e| e.to_string())?;
+        log::info!("Using sidecar engine binary: {}", engine.display());
+        Ok(Command::new(&engine))
+    }
+}
+
 // ─── Commands ────────────────────────────────────────────────────────────────
 
 /// Run the local Python sidecar to protect an image.
@@ -207,19 +233,7 @@ pub async fn run_local_protection(
     let eps  = epsilon.unwrap_or(0.05);
     let sz   = size.unwrap_or(1024);
 
-    let mut base_cmd = if let Some(script) = dev_python_engine_script() {
-        let python_bin = resolve_python_engine_bin()
-            .map_err(|e| format!("Local Python engine is not ready. {e}"))?;
-        log::info!("Using Python engine in dev mode: {}", script.display());
-        log::info!("Using Python interpreter for local engine: {}", python_bin);
-        let mut c = Command::new(&python_bin);
-        c.arg(script);
-        c
-    } else {
-        let engine = sidecar_path(&app).map_err(|e| e.to_string())?;
-        log::info!("Using sidecar engine binary: {}", engine.display());
-        Command::new(&engine)
-    };
+    let mut base_cmd = base_engine_command(&app)?;
 
     log::info!(
         "Spawning local engine with --input {:?} --output {:?} --level {} --size {}",
@@ -362,6 +376,166 @@ pub async fn run_local_protection(
     last_result.ok_or_else(|| {
         format!(
             "Sidecar exited without a SUCCESS line. Check that the output path is writable.{}",
+            stderr_tail_message(&stderr_tail)
+        )
+    })
+}
+
+#[tauri::command]
+pub async fn run_local_deepfake_test(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    original_path: String,
+    sanitized_path: String,
+    attack_type: String,
+) -> Result<DeepfakeAttackResult, String> {
+    let tmp_dir = state.temp_dir.lock().unwrap().clone();
+    let output_dir = format!("{}/attack-{}", tmp_dir, Uuid::new_v4());
+    std::fs::create_dir_all(&output_dir)
+        .map_err(|e| format!("Failed to create attack output dir: {e}"))?;
+
+    let mut base_cmd = base_engine_command(&app)?;
+
+    log::info!(
+        "Running deepfake test with original {:?}, sanitized {:?}, attack {:?}",
+        original_path,
+        sanitized_path,
+        attack_type
+    );
+
+    let torch_home = format!("{}/torch-cache", tmp_dir);
+    let _ = std::fs::create_dir_all(&torch_home);
+    let model_dir = std::env::var("DEEPFAKE_DEFENSE_MODEL_DIR").unwrap_or_else(|_| {
+        if let Ok(home) = std::env::var("HOME") {
+            format!("{home}/.deepfake-defense-models")
+        } else {
+            format!("{}/model-cache", tmp_dir)
+        }
+    });
+    let _ = std::fs::create_dir_all(&model_dir);
+
+    let mut child = base_cmd
+        .env("TORCH_HOME", &torch_home)
+        .env("XDG_CACHE_HOME", &torch_home)
+        .env("DEEPFAKE_DEFENSE_MODEL_DIR", &model_dir)
+        .args([
+            "--mode", "attack",
+            "--input", &original_path,
+            "--protected", &sanitized_path,
+            "--attack-type", &attack_type,
+            "--output-dir", &output_dir,
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("Failed to start local engine: {e}"))?;
+
+    {
+        let mut pids = state.child_pids.lock().unwrap();
+        pids.push(child.id());
+    }
+
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or("Could not capture stdout from sidecar")?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or("Could not capture stderr from sidecar")?;
+
+    let stderr_lines: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+    let stderr_lines_ref = Arc::clone(&stderr_lines);
+    let stderr_thread = std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines().map_while(Result::ok) {
+            log::warn!("sidecar! {}", line);
+            let mut lines = stderr_lines_ref.lock().unwrap();
+            lines.push(line);
+            if lines.len() > 25 {
+                lines.remove(0);
+            }
+        }
+    });
+
+    let reader = BufReader::new(stdout);
+    let mut last_result: Option<DeepfakeAttackResult> = None;
+    let mut runtime_error: Option<String> = None;
+
+    for line in reader.lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        log::debug!("sidecar> {}", line);
+
+        if line.starts_with("STATUS: ") || line.starts_with("PROGRESS: ") {
+            continue;
+        }
+
+        if let Some(payload) = line.strip_prefix("SUCCESS: ") {
+            let parsed: serde_json::Value = serde_json::from_str(payload)
+                .map_err(|e| format!("Invalid SUCCESS payload from sidecar: {e}"))?;
+            let result = DeepfakeAttackResult {
+                attack_type: parsed["attack_type"]
+                    .as_str()
+                    .unwrap_or(&attack_type)
+                    .to_string(),
+                attack_label: parsed["attack_label"]
+                    .as_str()
+                    .unwrap_or("Deepfake Attack")
+                    .to_string(),
+                original_fake_path: parsed["original_fake_path"]
+                    .as_str()
+                    .ok_or("Missing original_fake_path in sidecar response")?
+                    .to_string(),
+                sanitized_fake_path: parsed["sanitized_fake_path"]
+                    .as_str()
+                    .ok_or("Missing sanitized_fake_path in sidecar response")?
+                    .to_string(),
+                divergence: parsed["divergence"].as_f64().unwrap_or(0.0),
+                verdict: parsed["verdict"]
+                    .as_str()
+                    .unwrap_or("unknown")
+                    .to_string(),
+            };
+            last_result = Some(result);
+            continue;
+        }
+
+        if let Some(msg) = line.strip_prefix("ERROR: ") {
+            runtime_error = Some(msg.to_string());
+            let _ = child.kill();
+            break;
+        }
+    }
+
+    let exit_status = child
+        .wait()
+        .map_err(|e| format!("Failed to wait for sidecar: {e}"))?;
+    let _ = stderr_thread.join();
+    let stderr_tail = stderr_lines
+        .lock()
+        .map(|v| v.clone())
+        .unwrap_or_default();
+
+    {
+        let mut pids = state.child_pids.lock().unwrap();
+        pids.retain(|&p| p != 0);
+    }
+
+    if let Some(message) = runtime_error {
+        return Err(message + &stderr_tail_message(&stderr_tail));
+    }
+
+    if !exit_status.success() {
+        return Err(format!(
+            "Local engine deepfake test failed with non-zero code: {:?}.{}",
+            exit_status.code(),
+            stderr_tail_message(&stderr_tail)
+        ));
+    }
+
+    last_result.ok_or_else(|| {
+        format!(
+            "Deepfake test exited without a SUCCESS payload.{}",
             stderr_tail_message(&stderr_tail)
         )
     })
