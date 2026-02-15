@@ -246,7 +246,7 @@ export default function HomePage() {
           <div className="flex flex-col gap-2 text-xs text-slate-500">
             <div className="flex items-start gap-2">
               <span className="text-indigo-400 mt-0.5">★</span>
-              <span>Your image is processed at 1024 × 1024 px internally.</span>
+              <span>Your image is processed at 256 × 256 px internally for local deepfake testing.</span>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-indigo-400 mt-0.5">★</span>

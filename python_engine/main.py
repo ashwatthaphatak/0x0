@@ -14,7 +14,7 @@ Usage:
   defense-engine --input /path/to/image.png \
                  --output /path/to/result.png \
                  --level 0.05 \
-                 [--size 1024] \
+                 [--size 256] \
                  [--verify]
 """
 
@@ -192,8 +192,8 @@ def main() -> None:
     )
     parser.add_argument("--level", type=float, default=0.05,
                         help="Perturbation strength epsilon (default: 0.05)")
-    parser.add_argument("--size", type=int, default=1024,
-                        help="Processing resolution (default: 1024)")
+    parser.add_argument("--size", type=int, default=256,
+                        help="Processing resolution (default: 256)")
     parser.add_argument("--verify", action="store_true",
                         help="Also run post-hoc verification pass")
     args = parser.parse_args()

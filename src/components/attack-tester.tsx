@@ -79,6 +79,10 @@ export function AttackTester({ originalPath, sanitizedPath, isLocalResult }: Att
       setError("Original/sanitized paths are missing. Load an image from disk and sanitize again.");
       return;
     }
+    if (originalPath === sanitizedPath) {
+      setError("Original and sanitized paths are identical. Re-run sanitization before testing.");
+      return;
+    }
 
     setRunning(true);
     setError(null);
