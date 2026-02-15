@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import ssl
 import shutil
 import tempfile
 import zipfile
@@ -25,6 +26,19 @@ from urllib.request import Request, urlopen
 
 DEFAULT_URL = "https://www.dropbox.com/s/7e966qq0nlxwte4/celeba-128x128-5attrs.zip?dl=1"
 CHECKPOINT_REL_PATH = Path("stargan_celeba_128/models/200000-G.ckpt")
+
+
+def configure_ssl_runtime() -> None:
+    try:
+        import certifi
+    except Exception:
+        return
+
+    ca_bundle = certifi.where()
+    os.environ.setdefault("SSL_CERT_FILE", ca_bundle)
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_bundle)
+    os.environ.setdefault("CURL_CA_BUNDLE", ca_bundle)
+    ssl._create_default_https_context = lambda *args, **kwargs: ssl.create_default_context(cafile=ca_bundle)
 
 
 def parse_args() -> argparse.Namespace:
@@ -90,6 +104,8 @@ def download_to_temp(url: str) -> Path:
 
 
 def main() -> int:
+    configure_ssl_runtime()
+
     args = parse_args()
     output_root = Path(args.output_root).expanduser().resolve()
     target_ckpt = output_root / CHECKPOINT_REL_PATH

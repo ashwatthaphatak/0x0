@@ -22,6 +22,7 @@ import argparse
 import sys
 import os
 import json
+import ssl
 import traceback
 
 
@@ -51,9 +52,26 @@ def _success_protection(path: str, score: float) -> None:
     _success_payload({"path": path, "score": score})
 
 
+def _configure_ssl_runtime() -> None:
+    """
+    Use certifi CA bundle when available so urllib/requests can verify TLS
+    consistently on macOS Python installations.
+    """
+    try:
+        import certifi
+    except Exception:
+        return
+
+    ca_bundle = certifi.where()
+    os.environ.setdefault("SSL_CERT_FILE", ca_bundle)
+    os.environ.setdefault("REQUESTS_CA_BUNDLE", ca_bundle)
+    os.environ.setdefault("CURL_CA_BUNDLE", ca_bundle)
+    ssl._create_default_https_context = lambda *args, **kwargs: ssl.create_default_context(cafile=ca_bundle)
+
+
 def _check_dependencies(mode: str) -> None:
     """Fail early with a clear message if a dependency is missing."""
-    required = ["torch", "torchvision", "cv2", "PIL", "numpy", "skimage"]
+    required = ["torch", "torchvision", "cv2", "PIL", "numpy", "skimage", "certifi"]
     if mode == "attack":
         required.append("requests")
 
@@ -163,6 +181,8 @@ def validate_input_image(path: str) -> None:
 
 
 def main() -> None:
+    _configure_ssl_runtime()
+
     parser = argparse.ArgumentParser(
         description="DeepFake Defense Engine – vaccinate images against deepfakes"
     )

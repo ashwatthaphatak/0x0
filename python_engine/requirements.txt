@@ -10,3 +10,4 @@ tqdm>=4.66.0
 timm>=0.9.0
 lpips>=0.1.4
 requests>=2.31.0
+certifi>=2024.2.2
