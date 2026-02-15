@@ -18,11 +18,9 @@ Environment variables required in Modal secrets:
 from __future__ import annotations
 
 import io
-import json
 import os
 import time
 import uuid
-from typing import Optional
 
 import modal
 
@@ -46,55 +44,60 @@ image = (
         "python-multipart>=0.0.9",
         "anyio>=4.0",
     )
-    .copy_local_file("python_engine/defense_core.py", "/app/defense_core.py")
+    .add_local_file("python_engine/defense_core.py", "/app/defense_core.py")  # fix 1
 )
 
 app = modal.App("deepfake-defense", image=image)
 
 # ── In-memory job store (replace with Modal Dict for persistence) ─────────────
 
-jobs: dict[str, dict] = {}   # job_id → {status, progress, result_url, score, message}
+jobs: dict[str, dict] = {}  # job_id → {status, progress, result_url, score, message}
 
-# ── GPU / CPU function ───────────────────────────────────────────────────────
+# ── GPU / CPU function ────────────────────────────────────────────────────────
 
 @app.function(
-    # Use GPU if available; falls back to CPU silently
-    gpu=modal.gpu.T4(count=1),
+    gpu="T4",           # fix 2: was modal.gpu.T4(count=1)
     timeout=600,
     retries=1,
     memory=4096,
 )
-def run_protection_task(job_id: str, image_bytes: bytes, epsilon: float) -> dict:
+def run_protection_task(job_id: str, image_b64: str, epsilon: float) -> dict:
     """
-    Runs the full TFP pipeline on the given image bytes.
-    Updates the job store and returns the result dict.
+    Runs the full TFP pipeline on the given image (base64-encoded).
+    Returns result dict with base64-encoded output image and score.
     """
+    import base64
     import sys
+    import tempfile
+
     sys.path.insert(0, "/app")
 
     import torch
+    import torchvision.transforms as transforms
+    from PIL import Image
+
     from defense_core import (
         DualAttentionModule,
         DeepfakeDefenseFramework,
-        save_image,
         compute_protection_score,
+        save_image,
     )
-    from PIL import Image
-    import torchvision.transforms as transforms
-    import tempfile
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Decode image bytes from base64  (fix 3: avoids Modal's bytes annotation bug)
+    image_bytes = base64.b64decode(image_b64)
 
     def _update(progress: int, message: str = "") -> None:
         jobs[job_id] = {**jobs.get(job_id, {}), "progress": progress, "message": message}
 
-    _update(5, "Loading model…")
+    _update(5,  "Loading model…")
     attention_module  = DualAttentionModule(device)
     defense_framework = DeepfakeDefenseFramework(epsilon=epsilon, device=device)
 
     _update(25, "Loading image…")
-    img  = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    tf   = transforms.Compose([transforms.Resize((1024, 1024)), transforms.ToTensor()])
+    img    = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    tf     = transforms.Compose([transforms.Resize((1024, 1024)), transforms.ToTensor()])
     tensor = tf(img).unsqueeze(0).to(device)
 
     _update(45, "Generating attention map…")
@@ -106,28 +109,29 @@ def run_protection_task(job_id: str, image_bytes: bytes, epsilon: float) -> dict
     _update(85, "Computing score & saving…")
     score = compute_protection_score(tensor, vaccinated)
 
-    # Save to temp file and return bytes
-    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tf_file:
-        save_image(vaccinated, tf_file.name)
-        with open(tf_file.name, "rb") as f:
-            result_bytes = f.read()
-        os.unlink(tf_file.name)
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+        save_image(vaccinated, tmp.name)
+        with open(tmp.name, "rb") as f:
+            result_b64 = base64.b64encode(f.read()).decode()
+        os.unlink(tmp.name)
 
-    return {"score": score, "image_bytes": result_bytes}
+    return {"score": score, "image_b64": result_b64}
 
 
 # ── FastAPI web endpoints ─────────────────────────────────────────────────────
 
 @app.function(
-    keep_warm=1,       # keep one container warm to reduce cold starts
-    allow_concurrent_inputs=20,
+    min_containers=1,   # fix 4: was keep_warm=1
 )
+@modal.concurrent(max_inputs=20)   # fix 5: was allow_concurrent_inputs=20
 @modal.asgi_app()
 def web() -> "fastapi.FastAPI":
+    import asyncio
     import base64
+
     from fastapi import FastAPI, File, Form, HTTPException, UploadFile
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import JSONResponse, Response
+    from fastapi.responses import JSONResponse
 
     api = FastAPI(title="DeepFake Defense API", version="1.0.0")
 
@@ -147,7 +151,6 @@ def web() -> "fastapi.FastAPI":
         image:   UploadFile = File(...),
         epsilon: float      = Form(default=0.05),
     ):
-        # Validate
         if image.content_type not in {"image/jpeg", "image/png", "image/webp"}:
             raise HTTPException(400, f"Unsupported content type: {image.content_type}")
 
@@ -158,32 +161,25 @@ def web() -> "fastapi.FastAPI":
         if len(image_bytes) > 50 * 1024 * 1024:
             raise HTTPException(413, "Image too large (max 50 MB)")
 
-        job_id = str(uuid.uuid4())
+        job_id     = str(uuid.uuid4())
+        image_b64  = base64.b64encode(image_bytes).decode()  # encode before sending to GPU fn
         jobs[job_id] = {"status": "pending", "progress": 0, "message": "Queued"}
 
-        # Spawn the GPU task (non-blocking)
         async def _run():
             jobs[job_id]["status"] = "running"
             try:
-                result = await run_protection_task.remote.aio(job_id, image_bytes, epsilon)
-                # Encode result image as base64 data URL (simple – for production use S3/R2)
-                b64 = base64.b64encode(result["image_bytes"]).decode()
+                result = await run_protection_task.remote.aio(job_id, image_b64, epsilon)
                 jobs[job_id].update({
                     "status":     "complete",
                     "progress":   100,
-                    "result_url": f"data:image/png;base64,{b64}",
+                    "result_url": f"data:image/png;base64,{result['image_b64']}",
                     "score":      result["score"],
                     "message":    "Done",
                 })
             except Exception as exc:  # noqa: BLE001
-                jobs[job_id].update({
-                    "status":  "failed",
-                    "message": str(exc),
-                })
+                jobs[job_id].update({"status": "failed", "message": str(exc)})
 
-        import asyncio
         asyncio.create_task(_run())
-
         return JSONResponse({"job_id": job_id, "status": "pending"})
 
     @api.get("/status/{job_id}")
@@ -193,11 +189,17 @@ def web() -> "fastapi.FastAPI":
             raise HTTPException(404, f"Job {job_id} not found")
         return JSONResponse({
             "job_id":     job_id,
-            "status":     job.get("status", "pending"),
+            "status":     job.get("status",   "pending"),
             "progress":   job.get("progress", 0),
             "result_url": job.get("result_url"),
             "score":      job.get("score"),
-            "message":    job.get("message", ""),
+            "message":    job.get("message",  ""),
         })
 
     return api
+
+@app.local_entrypoint()
+def main():
+    print("✅ App parsed successfully.")
+    print("   To test locally:  modal serve app.py")
+    print("   To deploy:        modal deploy app.py")
