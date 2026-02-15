@@ -100,6 +100,12 @@ export async function runLocalDeepfakeTest(
   };
 }
 
+export async function writeTempInputImage(blob: Blob): Promise<string> {
+  const invoke = await getInvoke();
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  return invoke<string>("write_temp_input_image", { bytes: Array.from(bytes) });
+}
+
 export async function getAppVersion(): Promise<string> {
   try {
     const invoke = await getInvoke();

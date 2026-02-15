@@ -135,6 +135,7 @@ def run_attack(
     protected_path: str,
     attack_type: str,
     output_dir: str,
+    attack_size: int,
 ) -> dict:
     from stargan_attack import run_attack_comparison
 
@@ -147,6 +148,7 @@ def run_attack(
         sanitized_path=protected_path,
         attack_type=attack_type,
         output_dir=output_dir,
+        attack_size=attack_size,
         progress=_update,
     )
 
@@ -181,6 +183,12 @@ def main() -> None:
     parser.add_argument(
         "--output-dir",
         help="Directory to write attack outputs (attack mode)",
+    )
+    parser.add_argument(
+        "--attack-size",
+        type=int,
+        default=256,
+        help="StarGAN attack resolution (default: 256)",
     )
     parser.add_argument("--level", type=float, default=0.05,
                         help="Perturbation strength epsilon (default: 0.05)")
@@ -235,6 +243,7 @@ def main() -> None:
                 protected_path=args.protected,
                 attack_type=args.attack_type,
                 output_dir=args.output_dir or default_output_dir,
+                attack_size=args.attack_size,
             )
             _success_payload(attack_result)
 

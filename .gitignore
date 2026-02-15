@@ -37,13 +37,16 @@ __pycache__/
 *.pyd
 .Python
 .venv/
+.venv_deepfake/
 venv/
 env/
 python_engine/build/
 python_engine/dist/
 python_engine/.pytest_cache/
 python_engine/.mypy_cache/
+results/
+stargan_celeba_128/
 
 # Accidental local path typo artifact observed in repo
-{src-tauri/
+# (removed malformed pattern: {src-tauri/)
 .modal.toml
