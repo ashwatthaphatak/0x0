@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-inter: "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+}
+
+html, body {
+  height: 100%;
+  background-color: #020817; /* slate-950 */
+  color: #f1f5f9;             /* slate-100 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Disable Tauri's default context menu globally (optional UX choice) */
+body {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Allow text selection inside inputs and textareas */
+input, textarea, [data-selectable] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar        { width: 6px; height: 6px; }
+::-webkit-scrollbar-track  { background: transparent; }
+::-webkit-scrollbar-thumb  { background: #475569; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+
+/* react-easy-crop overrides */
+.reactEasyCrop_Container {
+  border-radius: 0.75rem;
+}
