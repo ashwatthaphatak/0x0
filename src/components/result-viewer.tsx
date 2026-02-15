@@ -1,88 +1,99 @@
-// src/components/result-viewer.tsx
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ProtectionResult } from "@/types";
-import { localPathToUrl, saveResultToPath, saveFileDialog } from "@/lib/tauri-bridge";
+import { localPathToUrl, saveFileDialog, saveResultToPath } from "@/lib/tauri-bridge";
 
 interface ResultViewerProps {
-  original:   string;           // data URL or local path URL
-  result:     ProtectionResult;
-  onReset:    () => void;
+  original: string;
+  result: ProtectionResult;
+  onReset: () => void;
 }
 
 export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
   const [protectedUrl, setProtectedUrl] = useState<string>("");
-  const [sliderPos, setSliderPos]       = useState(50);         // 0–100
-  const [saving,    setSaving]          = useState(false);
-  const [saveMsg,   setSaveMsg]         = useState<string | null>(null);
-  const containerRef                    = useRef<HTMLDivElement>(null);
-  const dragging                        = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [previewErr, setPreviewErr] = useState<string | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
 
-  // Resolve protected image URL
-  useEffect(() => {
-    if (result.isLocal) {
-      localPathToUrl(result.outputPath).then(setProtectedUrl);
-    } else {
-      setProtectedUrl(result.outputPath);
+  const releaseObjectUrl = useCallback(() => {
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
     }
-  }, [result]);
-
-  // ── Slider drag logic ──────────────────────────────────────────────────────
-  const updateSlider = useCallback((clientX: number) => {
-    const el = containerRef.current;
-    if (!el) return;
-    const { left, width } = el.getBoundingClientRect();
-    const pct = Math.max(0, Math.min(100, ((clientX - left) / width) * 100));
-    setSliderPos(pct);
   }, []);
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    dragging.current = true;
-    updateSlider(e.clientX);
-  }, [updateSlider]);
-
   useEffect(() => {
-    const onMove = (e: MouseEvent)  => { if (dragging.current) updateSlider(e.clientX); };
-    const onUp   = ()               => { dragging.current = false; };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup",   onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup",   onUp);
+    let cancelled = false;
+    setProtectedUrl("");
+    setPreviewErr(null);
+    releaseObjectUrl();
+
+    const resolveProtectedUrl = async () => {
+      if (!result.isLocal) {
+        if (!cancelled) setProtectedUrl(result.outputPath);
+        return;
+      }
+
+      try {
+        const { readFile } = await import("@tauri-apps/plugin-fs");
+        const bytes = await readFile(result.outputPath);
+        const blobUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+
+        if (cancelled) {
+          URL.revokeObjectURL(blobUrl);
+          return;
+        }
+
+        objectUrlRef.current = blobUrl;
+        setProtectedUrl(blobUrl);
+        return;
+      } catch {
+        // Fallback for environments where direct FS read is unavailable.
+      }
+
+      try {
+        const converted = await localPathToUrl(result.outputPath);
+        if (!cancelled) setProtectedUrl(converted);
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setPreviewErr(err instanceof Error ? err.message : "Could not preview sanitized image.");
+        }
+      }
     };
-  }, [updateSlider]);
 
-  // Touch support
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => updateSlider(e.touches[0].clientX),
-    [updateSlider]
-  );
+    void resolveProtectedUrl();
 
-  // ── Save ──────────────────────────────────────────────────────────────────
+    return () => {
+      cancelled = true;
+      releaseObjectUrl();
+    };
+  }, [releaseObjectUrl, result]);
+
   const handleSave = useCallback(async () => {
     setSaving(true);
     setSaveMsg(null);
     try {
-      const dest = await saveFileDialog("protected.png");
-      if (!dest) { setSaving(false); return; }
+      const dest = await saveFileDialog("sanitized.png");
+      if (!dest) {
+        setSaving(false);
+        return;
+      }
       await saveResultToPath(result.outputPath, dest, result.isLocal);
-      setSaveMsg(`✓ Saved to ${dest.split(/[\\/]/).pop()}`);
+      setSaveMsg(`Saved to ${dest.split(/[\\/]/).pop()}`);
     } catch (err: unknown) {
-      setSaveMsg(`✗ ${err instanceof Error ? err.message : String(err)}`);
+      setSaveMsg(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
   }, [result]);
 
   const scoreColor =
-    result.score >= 80 ? "text-emerald-400"
-    : result.score >= 50 ? "text-yellow-400"
-    : "text-red-400";
+    result.score >= 80 ? "text-emerald-400" : result.score >= 50 ? "text-yellow-400" : "text-red-400";
 
   return (
     <div className="flex flex-col gap-5">
-      {/* Score badge */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex flex-col">
@@ -91,123 +102,71 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
               {result.score.toFixed(1)}%
             </span>
           </div>
-          <div className={[
-            "px-3 py-1 rounded-full text-sm font-semibold",
-            result.score >= 80
-              ? "bg-emerald-900/60 text-emerald-300 border border-emerald-700"
-              : result.score >= 50
-              ? "bg-yellow-900/60 text-yellow-300 border border-yellow-700"
-              : "bg-red-900/60 text-red-300 border border-red-700",
-          ].join(" ")}>
-            {result.score >= 80 ? "🛡️ Protected" : result.score >= 50 ? "⚠️ Partial" : "❌ Weak"}
+          <div
+            className={[
+              "px-3 py-1 rounded-full text-sm font-semibold border",
+              result.score >= 80
+                ? "bg-emerald-900/60 text-emerald-300 border-emerald-700"
+                : result.score >= 50
+                  ? "bg-yellow-900/60 text-yellow-300 border-yellow-700"
+                  : "bg-red-900/60 text-red-300 border-red-700",
+            ].join(" ")}
+          >
+            {result.score >= 80 ? "Protected" : result.score >= 50 ? "Partial" : "Weak"}
           </div>
         </div>
-        <span className="text-xs text-slate-500">
-          {result.isLocal ? "🖥 Local" : "☁️ Cloud"}
-        </span>
+        <span className="text-xs text-slate-500">{result.isLocal ? "Local" : "Cloud"}</span>
       </div>
 
-      {/* Comparison slider */}
-      <div
-        ref={containerRef}
-        className="relative w-full h-72 rounded-2xl overflow-hidden cursor-ew-resize select-none bg-black"
-        onMouseDown={handleMouseDown}
-        onTouchMove={handleTouchMove}
-        onTouchStart={(e) => updateSlider(e.touches[0].clientX)}
-      >
-        {/* Protected (right side) */}
-        {protectedUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={protectedUrl}
-            alt="Protected"
-            className="absolute inset-0 w-full h-full object-contain"
-            draggable={false}
-          />
-        )}
-
-        {/* Original (left clip) */}
-        <div
-          className="absolute inset-0 overflow-hidden"
-          style={{ width: `${sliderPos}%` }}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={original}
-            alt="Original"
-            className="absolute inset-0 w-full h-full object-contain"
-            style={{ width: containerRef.current?.clientWidth ?? "100%" }}
-            draggable={false}
-          />
-        </div>
-
-        {/* Divider line */}
-        <div
-          className="absolute top-0 bottom-0 w-0.5 bg-white/80 shadow-lg pointer-events-none"
-          style={{ left: `${sliderPos}%` }}
-        >
-          {/* Handle */}
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2
-                          w-8 h-8 rounded-full bg-white shadow-xl flex items-center justify-center">
-            <svg className="w-4 h-4 text-slate-700" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5}
-                d="M8 9l-3 3 3 3m8-6l3 3-3 3"/>
-            </svg>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-slate-700/80 bg-slate-900/70 p-3">
+          <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400">Original</div>
+          <div className="h-64 overflow-hidden rounded-xl bg-black">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={original} alt="Original" className="h-full w-full object-contain" />
           </div>
         </div>
 
-        {/* Labels */}
-        <div className="absolute top-3 left-3 px-2 py-1 rounded-md bg-black/60 backdrop-blur text-xs text-white font-medium pointer-events-none">
-          Original
-        </div>
-        <div className="absolute top-3 right-3 px-2 py-1 rounded-md bg-indigo-900/80 backdrop-blur text-xs text-indigo-200 font-medium pointer-events-none">
-          🛡️ Protected
+        <div className="rounded-2xl border border-indigo-700/70 bg-indigo-950/20 p-3">
+          <div className="mb-2 text-xs font-medium uppercase tracking-wider text-indigo-300">Sanitized</div>
+          <div className="h-64 overflow-hidden rounded-xl bg-black">
+            {protectedUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={protectedUrl}
+                alt="Sanitized"
+                className="h-full w-full object-contain"
+                onError={() => {
+                  setProtectedUrl("");
+                  setPreviewErr("Could not preview sanitized image.");
+                }}
+              />
+            ) : (
+              <div className="flex h-full items-center justify-center text-xs text-slate-500">Loading preview...</div>
+            )}
+          </div>
         </div>
       </div>
 
-      <p className="text-xs text-slate-500 text-center">Drag the slider to compare · the protection is imperceptible</p>
+      {previewErr && <p className="text-center text-xs text-amber-400">{previewErr}</p>}
 
-      {/* Action buttons */}
       <div className="flex gap-3">
         <button
           onClick={onReset}
-          className="flex-1 px-4 py-2.5 rounded-xl border border-slate-600 text-slate-300
-                     hover:bg-slate-700 transition-colors text-sm font-medium"
+          className="flex-1 rounded-xl border border-slate-600 px-4 py-2.5 text-sm font-medium text-slate-300 transition-colors hover:bg-slate-700"
         >
-          ← New Image
+          New Image
         </button>
         <button
           onClick={handleSave}
-          disabled={saving || !protectedUrl}
-          className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500
-                     text-white text-sm font-semibold transition-colors disabled:opacity-50
-                     flex items-center justify-center gap-2"
+          disabled={saving || !result.outputPath}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
         >
-          {saving ? (
-            <>
-              <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-              </svg>
-              Saving…
-            </>
-          ) : (
-            <>
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
-              </svg>
-              Save Image
-            </>
-          )}
+          {saving ? "Saving..." : "Save Sanitized Image"}
         </button>
       </div>
 
-      {saveMsg && (
-        <p className={`text-sm text-center ${saveMsg.startsWith("✓") ? "text-emerald-400" : "text-red-400"}`}>
-          {saveMsg}
-        </p>
-      )}
+      {saveMsg && <p className="text-center text-xs text-slate-400">{saveMsg}</p>}
     </div>
   );
 }
