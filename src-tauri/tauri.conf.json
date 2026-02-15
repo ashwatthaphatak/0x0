@@ -52,6 +52,7 @@
       "entitlements": null,
       "exceptionDomain": null,
       "frameworks": [],
+      "infoPlist": "Info.plist",
       "providerShortName": null,
       "signingIdentity": null
     },
