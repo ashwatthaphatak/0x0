@@ -1,7 +1,7 @@
 // src/components/image-dropzone.tsx
 "use client";
 
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, useEffect } from "react";
 import { IS_TAURI, openFileDialog } from "@/lib/tauri-bridge";
 
 interface ImageDropzoneProps {
@@ -27,7 +27,41 @@ function inferMimeType(path: string): string {
 export function ImageDropzone({ onImageLoaded, disabled, previewUrl }: ImageDropzoneProps) {
   const [dragOver, setDragOver]  = useState(false);
   const [errMsg,   setErrMsg]    = useState<string | null>(null);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const inputRef                 = useRef<HTMLInputElement>(null);
+  const videoRef                 = useRef<HTMLVideoElement>(null);
+  const streamRef                = useRef<MediaStream | null>(null);
+
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      for (const track of streamRef.current.getTracks()) {
+        track.stop();
+      }
+      streamRef.current = null;
+    }
+    setCameraOpen(false);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        for (const track of streamRef.current.getTracks()) {
+          track.stop();
+        }
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!cameraOpen || !videoRef.current || !streamRef.current) return;
+    const video = videoRef.current;
+    video.srcObject = streamRef.current;
+    void video.play().catch(() => {});
+
+    return () => {
+      video.srcObject = null;
+    };
+  }, [cameraOpen]);
 
   const validateAndLoad = useCallback(
     (file: File, nativePath?: string) => {
@@ -53,6 +87,7 @@ export function ImageDropzone({ onImageLoaded, disabled, previewUrl }: ImageDrop
       e.preventDefault();
       setDragOver(false);
       if (disabled) return;
+      stopCamera();
 
       const file = e.dataTransfer.files[0];
       if (!file) return;
@@ -61,7 +96,7 @@ export function ImageDropzone({ onImageLoaded, disabled, previewUrl }: ImageDrop
       // For simplicity, we use the File object (Blob) and let the Tauri bridge handle the rest.
       validateAndLoad(file);
     },
-    [disabled, validateAndLoad]
+    [disabled, stopCamera, validateAndLoad]
   );
 
   const handleDragOver = useCallback(
@@ -75,16 +110,18 @@ export function ImageDropzone({ onImageLoaded, disabled, previewUrl }: ImageDrop
   // ── Browser file input ─────────────────────────────────────────────────────
   const handleFileInput = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
+      stopCamera();
       const file = e.target.files?.[0];
       if (file) validateAndLoad(file);
       // Reset so re-selecting the same file triggers onChange
       e.target.value = "";
     },
-    [validateAndLoad]
+    [stopCamera, validateAndLoad]
   );
 
   // ── Native Tauri file picker ───────────────────────────────────────────────
   const handleNativePicker = useCallback(async () => {
+    stopCamera();
     if (IS_TAURI) {
       const path = await openFileDialog();
       if (!path) return;
@@ -103,7 +140,73 @@ export function ImageDropzone({ onImageLoaded, disabled, previewUrl }: ImageDrop
     } else {
       inputRef.current?.click();
     }
-  }, [onImageLoaded, validateAndLoad]);
+  }, [onImageLoaded, stopCamera, validateAndLoad]);
+
+  const handleOpenCamera = useCallback(async () => {
+    if (disabled) return;
+    setErrMsg(null);
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setErrMsg("Camera access is not supported in this environment.");
+      return;
+    }
+
+    try {
+      stopCamera();
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user" },
+        audio: false,
+      });
+      streamRef.current = stream;
+      setCameraOpen(true);
+    } catch (err) {
+      console.error("Camera open failed:", err);
+      setErrMsg("Could not access camera. Please allow camera permission and try again.");
+    }
+  }, [disabled, stopCamera]);
+
+  const handleCaptureFromCamera = useCallback(async () => {
+    if (!videoRef.current) return;
+    setErrMsg(null);
+
+    const video = videoRef.current;
+    if (!video.videoWidth || !video.videoHeight) {
+      setErrMsg("Camera is not ready yet. Please wait a second and try again.");
+      return;
+    }
+
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Could not create canvas context");
+
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(
+          (captureBlob) => {
+            if (!captureBlob) {
+              reject(new Error("Camera capture failed"));
+              return;
+            }
+            resolve(captureBlob);
+          },
+          "image/jpeg",
+          0.95
+        );
+      });
+
+      const file = new File([blob], `webcam-${Date.now()}.jpg`, {
+        type: "image/jpeg",
+      });
+      validateAndLoad(file);
+      stopCamera();
+    } catch (err) {
+      console.error("Camera capture failed:", err);
+      setErrMsg("Could not take photo. Please try again.");
+    }
+  }, [stopCamera, validateAndLoad]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -164,6 +267,48 @@ export function ImageDropzone({ onImageLoaded, disabled, previewUrl }: ImageDrop
           </div>
         )}
       </div>
+
+      <button
+        type="button"
+        onClick={handleOpenCamera}
+        disabled={disabled}
+        className="w-full py-2.5 rounded-xl border border-slate-600 text-slate-300 text-sm font-medium
+                   hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        Use Camera Instead
+      </button>
+
+      {cameraOpen && (
+        <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-3">
+          <div className="relative w-full aspect-video rounded-xl overflow-hidden bg-black">
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+            />
+          </div>
+          <div className="flex gap-3 mt-3">
+            <button
+              type="button"
+              onClick={stopCamera}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-slate-600 text-slate-300
+                         hover:bg-slate-700 transition-colors text-sm font-medium"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleCaptureFromCamera}
+              className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500
+                         text-white text-sm font-medium transition-colors"
+            >
+              Take Photo
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Hidden browser file input (fallback) */}
       <input
