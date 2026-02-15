@@ -10,11 +10,17 @@ interface ResultViewerProps {
   onReset: () => void;
 }
 
-const RIPPLE_RADIUS_PX = 46;
-const RIPPLE_FALLOFF_PX = 120;
+const RIPPLE_RADIUS_MIN_PX = 40;
+const RIPPLE_RADIUS_MAX_PX = 90;
+const RIPPLE_FALLOFF_MIN_PX = 105;
+const RIPPLE_FALLOFF_MAX_PX = 220;
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 function jetColor(value: number): { r: number; g: number; b: number } {
@@ -133,6 +139,14 @@ function InteractiveHeatmapPreview({ originalSrc, protectedSrc, onImageError }: 
   const [isHovering, setIsHovering] = useState(false);
   const [cursor, setCursor] = useState({ x: 50, y: 50 });
   const [canHover, setCanHover] = useState(false);
+  const [rippleSize, setRippleSize] = useState({
+    radius: 46,
+    falloff: 120,
+    ringA: 7,
+    ringB: 13,
+    ringC: 22,
+  });
+  const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -162,6 +176,32 @@ function InteractiveHeatmapPreview({ originalSrc, protectedSrc, onImageError }: 
     };
   }, [originalSrc, protectedSrc]);
 
+  useEffect(() => {
+    if (!containerRef.current || typeof ResizeObserver === "undefined") return;
+
+    const element = containerRef.current;
+    const updateSize = (width: number, height: number) => {
+      const minDim = Math.max(120, Math.min(width, height));
+      const radius = Math.round(clamp(minDim * 0.11, RIPPLE_RADIUS_MIN_PX, RIPPLE_RADIUS_MAX_PX));
+      const falloff = Math.round(clamp(minDim * 0.29, RIPPLE_FALLOFF_MIN_PX, RIPPLE_FALLOFF_MAX_PX));
+      const ringA = Math.max(6, Math.round(falloff * 0.06));
+      const ringB = ringA + Math.max(5, Math.round(falloff * 0.05));
+      const ringC = ringB + Math.max(7, Math.round(falloff * 0.075));
+      setRippleSize({ radius, falloff, ringA, ringB, ringC });
+    };
+
+    updateSize(element.clientWidth, element.clientHeight);
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      updateSize(entry.contentRect.width, entry.contentRect.height);
+    });
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
   const updateCursor = useCallback((event: PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
     if (!rect.width || !rect.height) return;
@@ -174,8 +214,8 @@ function InteractiveHeatmapPreview({ originalSrc, protectedSrc, onImageError }: 
   const overlayMask: CSSProperties | undefined =
     heatmapUrl && canHover
       ? {
-          WebkitMaskImage: `radial-gradient(circle ${RIPPLE_FALLOFF_PX}px at ${cursor.x}% ${cursor.y}%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) ${Math.round((RIPPLE_RADIUS_PX / RIPPLE_FALLOFF_PX) * 100)}%, rgba(0, 0, 0, 0.72) 38%, rgba(0, 0, 0, 0.2) 48%, rgba(0, 0, 0, 0) 58%)`,
-          maskImage: `radial-gradient(circle ${RIPPLE_FALLOFF_PX}px at ${cursor.x}% ${cursor.y}%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) ${Math.round((RIPPLE_RADIUS_PX / RIPPLE_FALLOFF_PX) * 100)}%, rgba(0, 0, 0, 0.72) 38%, rgba(0, 0, 0, 0.2) 48%, rgba(0, 0, 0, 0) 58%)`,
+          WebkitMaskImage: `radial-gradient(circle ${rippleSize.falloff}px at ${cursor.x}% ${cursor.y}%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) ${Math.round((rippleSize.radius / rippleSize.falloff) * 100)}%, rgba(0, 0, 0, 0.72) 38%, rgba(0, 0, 0, 0.2) 48%, rgba(0, 0, 0, 0) 58%)`,
+          maskImage: `radial-gradient(circle ${rippleSize.falloff}px at ${cursor.x}% ${cursor.y}%, rgba(0, 0, 0, 1) 0%, rgba(0, 0, 0, 1) ${Math.round((rippleSize.radius / rippleSize.falloff) * 100)}%, rgba(0, 0, 0, 0.72) 38%, rgba(0, 0, 0, 0.2) 48%, rgba(0, 0, 0, 0) 58%)`,
         }
       : undefined;
   const dimmingOverlay: CSSProperties | undefined =
@@ -184,13 +224,14 @@ function InteractiveHeatmapPreview({ originalSrc, protectedSrc, onImageError }: 
           ...overlayMask,
           backgroundImage: [
             `radial-gradient(circle at ${cursor.x}% ${cursor.y}%, rgba(0, 0, 0, 0.82) 0%, rgba(0, 0, 0, 0.62) 18%, rgba(0, 0, 0, 0.36) 34%, rgba(0, 0, 0, 0.22) 49%, rgba(0, 0, 0, 0.1) 60%, rgba(0, 0, 0, 0) 74%)`,
-            `repeating-radial-gradient(circle at ${cursor.x}% ${cursor.y}%, rgba(0, 0, 0, 0.16) 0px, rgba(0, 0, 0, 0.16) 7px, rgba(0, 0, 0, 0.04) 13px, rgba(0, 0, 0, 0.04) 22px)`,
+            `repeating-radial-gradient(circle at ${cursor.x}% ${cursor.y}%, rgba(0, 0, 0, 0.16) 0px, rgba(0, 0, 0, 0.16) ${rippleSize.ringA}px, rgba(0, 0, 0, 0.04) ${rippleSize.ringB}px, rgba(0, 0, 0, 0.04) ${rippleSize.ringC}px)`,
           ].join(", "),
         }
       : undefined;
 
   return (
     <div
+      ref={containerRef}
       className="relative h-full w-full"
       onPointerEnter={(event) => {
         if (!heatmapUrl || !canHover) return;
@@ -246,6 +287,7 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
   const [previewErr, setPreviewErr] = useState<string | null>(null);
+  const [expandedView, setExpandedView] = useState<"original" | "sanitized" | null>(null);
   const objectUrlRef = useRef<string | null>(null);
 
   const releaseObjectUrl = useCallback(() => {
@@ -259,6 +301,7 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
     let cancelled = false;
     setProtectedUrl("");
     setPreviewErr(null);
+    setExpandedView(null);
     releaseObjectUrl();
 
     const resolveProtectedUrl = async () => {
@@ -301,6 +344,19 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
       releaseObjectUrl();
     };
   }, [releaseObjectUrl, result]);
+
+  useEffect(() => {
+    if (!expandedView) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setExpandedView(null);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [expandedView]);
 
   const handleSave = useCallback(async () => {
     setSaving(true);
@@ -352,15 +408,24 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-slate-700/80 bg-slate-900/70 p-3">
           <div className="mb-2 text-xs font-medium uppercase tracking-wider text-slate-400">Original</div>
-          <div className="h-64 overflow-hidden rounded-xl bg-black">
+          <div className="relative h-64 overflow-hidden rounded-xl bg-black">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={original} alt="Original" className="h-full w-full object-contain" />
+            <button
+              type="button"
+              onClick={() => setExpandedView("original")}
+              className="absolute right-2 top-2 rounded-md border border-white/20 bg-black/55 p-1.5 text-white/90 transition-colors hover:bg-black/75"
+              aria-label="Expand original image"
+              title="Expand"
+            >
+              <ExpandIcon />
+            </button>
           </div>
         </div>
 
         <div className="rounded-2xl border border-indigo-700/70 bg-indigo-950/20 p-3">
           <div className="mb-2 text-xs font-medium uppercase tracking-wider text-indigo-300">Sanitized</div>
-          <div className="h-64 overflow-hidden rounded-xl bg-black">
+          <div className="relative h-64 overflow-hidden rounded-xl bg-black">
             {protectedUrl ? (
               <InteractiveHeatmapPreview
                 originalSrc={original}
@@ -373,6 +438,18 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
             ) : (
               <div className="flex h-full items-center justify-center text-xs text-slate-500">Loading preview...</div>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                if (protectedUrl) setExpandedView("sanitized");
+              }}
+              className="absolute right-2 top-2 rounded-md border border-white/20 bg-black/55 p-1.5 text-white/90 transition-colors hover:bg-black/75 disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Expand sanitized image"
+              title="Expand"
+              disabled={!protectedUrl}
+            >
+              <ExpandIcon />
+            </button>
           </div>
         </div>
       </div>
@@ -396,6 +473,59 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
       </div>
 
       {saveMsg && <p className="text-center text-xs text-slate-400">{saveMsg}</p>}
+
+      {expandedView && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4"
+          onClick={() => setExpandedView(null)}
+        >
+          <div
+            className="relative flex h-[92vh] w-[95vw] max-w-7xl items-center justify-center overflow-hidden rounded-2xl border border-slate-700 bg-black"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {expandedView === "original" ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={original} alt="Original expanded" className="h-full w-full object-contain" />
+            ) : (
+              protectedUrl && (
+                <InteractiveHeatmapPreview
+                  originalSrc={original}
+                  protectedSrc={protectedUrl}
+                  onImageError={() => {
+                    setExpandedView(null);
+                    setProtectedUrl("");
+                    setPreviewErr("Could not preview sanitized image.");
+                  }}
+                />
+              )
+            )}
+
+            <button
+              type="button"
+              onClick={() => setExpandedView(null)}
+              className="absolute right-3 top-3 rounded-md border border-white/20 bg-black/60 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-black/80"
+              aria-label="Close expanded preview"
+              title="Close"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function ExpandIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M8 4H4V8M16 20H20V16M4 8L10 2M20 16L14 22"
+        stroke="currentColor"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
