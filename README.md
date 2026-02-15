@@ -21,70 +21,123 @@ Proactively **vaccinate** images against deepfake manipulation using **Texture F
 
 ## Quick Start
 
-### Prerequisites
+### Full Local Setup (for a new collaborator)
+
+### 1. Install prerequisites
 
 | Tool | Version |
 |------|---------|
-| Node.js | ≥ 18 |
-| Rust | stable (≥ 1.77) |
+| Node.js | >= 18 |
+| Rust | stable (>= 1.77) |
 | Python | 3.11 |
-| `tauri-cli` | 2.x |
+| Tauri CLI | 2.x (installed from this repo's `devDependencies`) |
 
-### 1. Install JS dependencies
+Install the OS-level dependencies required by Tauri for your platform:
+https://tauri.app/start/prerequisites/
+
+### 2. Clone and install JavaScript dependencies
 
 ```bash
+git clone <repo-url>
+cd 0x0
 npm install
 ```
 
-### 2. Build the Python sidecar
+### 3. Install Python engine dependencies
+
+Pick the exact Python interpreter you want this app to use, then install engine
+dependencies into that interpreter.
+
+Example:
 
 ```bash
-cd python_engine
-pip install -r requirements.txt
-chmod +x build_binary.sh
-./build_binary.sh
-cd ..
+/absolute/path/to/python -m pip install --upgrade pip
+/absolute/path/to/python -m pip install -r python_engine/requirements.txt
 ```
 
-This places `defense-engine-<target-triple>` into `src-tauri/binaries/`.
+### 4. Set `DEEPFAKE_DEFENSE_PYTHON`
 
-### 3. Configure environment
+In dev mode, Tauri runs `python_engine/main.py` directly and checks
+`DEEPFAKE_DEFENSE_PYTHON` first.
 
 ```bash
-cp .env.example .env.local
-# Edit .env.local with your Modal URL
+export DEEPFAKE_DEFENSE_PYTHON=/absolute/path/to/python
 ```
 
-### 4. (Recommended) Preload StarGAN Weights
-
-To avoid first-run deepfake-test download delays/failures, preload the exact
-CelebA-128 StarGAN checkpoint:
+To persist this on `zsh`:
 
 ```bash
-python3 python_engine/download_stargan_weights.py
+echo 'export DEEPFAKE_DEFENSE_PYTHON=/absolute/path/to/python' >> ~/.zshrc
+source ~/.zshrc
+```
+
+### 5. Optional: configure Cloud mode
+
+Cloud mode uses `NEXT_PUBLIC_MODAL_BASE_URL` from `.env.local`.
+
+```bash
+cat > .env.local <<'EOF'
+NEXT_PUBLIC_MODAL_BASE_URL=https://your-modal-endpoint.modal.run
+EOF
+```
+
+If you only need local mode, skip this step.
+
+### 6. Optional but recommended: preload StarGAN weights
+
+```bash
+"$DEEPFAKE_DEFENSE_PYTHON" python_engine/download_stargan_weights.py
 ```
 
 Or import from a file you already have:
 
 ```bash
-python3 python_engine/download_stargan_weights.py --from-file /absolute/path/to/celeba-128x128-5attrs.zip
+"$DEEPFAKE_DEFENSE_PYTHON" python_engine/download_stargan_weights.py --from-file /absolute/path/to/celeba-128x128-5attrs.zip
 # or
-python3 python_engine/download_stargan_weights.py --from-file /absolute/path/to/200000-G.ckpt
+"$DEEPFAKE_DEFENSE_PYTHON" python_engine/download_stargan_weights.py --from-file /absolute/path/to/200000-G.ckpt
 ```
 
-### 5. Run in development
+### 7. Start the app in development
+
+This is the exact flow used in this repo:
 
 ```bash
+export DEEPFAKE_DEFENSE_PYTHON=/Users/anish/miniforge3/bin/python
 npm run tauri dev
 ```
 
-### 6. Build for distribution
+For your friend, keep the command shape identical and only change the Python
+path.
+
+### 8. Troubleshooting local engine readiness
+
+If the app says local engine is unavailable, verify the interpreter and deps:
+
+```bash
+"$DEEPFAKE_DEFENSE_PYTHON" -c "import torch,torchvision,cv2,PIL,numpy,skimage; print('python deps ok')"
+```
+
+### 9. Build distributable desktop bundles
 
 ```bash
 npm run tauri build
 ```
 
 Outputs: `.msi` (Windows), `.dmg` (macOS), `.deb`/`.AppImage` (Linux) in `src-tauri/target/release/bundle/`.
+
+### 10. Optional: build the packaged Python sidecar binary
+
+This is mostly needed for packaging workflows; regular `tauri dev` can run the
+Python script directly.
+
+```bash
+cd python_engine
+chmod +x build_binary.sh
+PYTHON_BIN="$DEEPFAKE_DEFENSE_PYTHON" ./build_binary.sh
+cd ..
+```
+
+This places `defense-engine-<target-triple>` into `src-tauri/binaries/`.
 
 ---
 
@@ -147,7 +200,7 @@ Copy the printed web URL into `.env.local` as `NEXT_PUBLIC_MODAL_BASE_URL`.
 ├── package.json
 ├── tsconfig.json
 ├── tailwind.config.js
-└── .env.example
+└── .env.local (optional, for cloud mode)
 ```
 
 ---
@@ -190,3 +243,5 @@ Typical quality metrics (ε = 0.05, 1024 × 1024):
 | File > 50 MB | Rejected with size error |
 | Out of GPU/RAM | Python emits ERROR line; UI suggests Cloud mode |
 | App close | Temp dir deleted; sidecar process killed |
+
+okay, run this app to app
