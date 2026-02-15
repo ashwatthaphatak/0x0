@@ -30,7 +30,10 @@ env/
 
 # Local outputs and downloaded model artifacts
 results/
+batch_results*/
 stargan_celeba_128/
+stargan_rafd/
+external/stargan_v1/
 
 # Logs and temp files
 *.log

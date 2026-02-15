@@ -9,6 +9,6 @@ pillow
 numpy
 scipy
 tqdm
-lpips
 gradio==3.50.2
 requests
+certifi
