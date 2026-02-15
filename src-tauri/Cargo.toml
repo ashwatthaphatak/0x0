@@ -1,8 +1,8 @@
 [package]
 name = "deepfake-defense"
 version = "0.1.0"
-description = "DeepFake Defense Desktop Platform – vaccinate images against deepfakes"
-authors = ["DeepFake Defense Team"]
+description = "Vaxel Desktop Platform – vaccinate images against deepfakes"
+authors = ["Vaxel Team"]
 edition = "2021"
 
 [lib]

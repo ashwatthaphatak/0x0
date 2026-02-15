@@ -1,6 +1,6 @@
 // src-tauri/src/lib.rs
 // ─────────────────────────────────────────────────────────────────────────────
-// DeepFake Defense – shared Tauri app entry for desktop/mobile.
+// Vaxel – shared Tauri app entry for desktop/mobile.
 // ─────────────────────────────────────────────────────────────────────────────
 
 mod commands;

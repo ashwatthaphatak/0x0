@@ -115,30 +115,11 @@ export function AttackTester({ originalPath, sanitizedPath, isLocalResult }: Att
     }
   }, [attackType, originalPath, sanitizedPath]);
 
-  const verdictStyle =
-    result?.verdict === "blocked"
-      ? "border-emerald-700 bg-emerald-900/30 text-emerald-300"
-      : result?.verdict === "partial"
-        ? "border-yellow-700 bg-yellow-900/30 text-yellow-300"
-        : "border-red-700 bg-red-900/30 text-red-300";
-
-  const verdictText =
-    result?.verdict === "blocked"
-      ? "Blocked"
-      : result?.verdict === "partial"
-        ? "Partial"
-        : result?.verdict === "not_blocked"
-          ? "Not Blocked"
-          : "Unknown";
-
   return (
     <div className="rounded-2xl border border-slate-700/80 bg-slate-900/70 p-4">
       <div className="mb-4 flex items-start justify-between gap-4">
         <div>
-          <h3 className="text-sm font-semibold text-slate-200">Deepfake Test (StarGAN)</h3>
-          <p className="mt-1 text-xs text-slate-400">
-            Run the same deepfake attack on original and sanitized images to compare outcomes.
-          </p>
+          <h3 className="text-sm font-semibold text-slate-200">Deepfake Test</h3>
         </div>
       </div>
 
@@ -174,23 +155,10 @@ export function AttackTester({ originalPath, sanitizedPath, isLocalResult }: Att
         </button>
       </div>
 
-      <p className="mt-2 text-xs text-slate-500">
-        {DEEPFAKE_ATTACK_OPTIONS.find((opt) => opt.value === attackType)?.description}
-      </p>
-
       {error && <p className="mt-3 text-xs text-red-400">{error}</p>}
 
       {result && (
         <div className="mt-4 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-slate-400">
-              Divergence: <span className="font-mono text-slate-200">{result.divergence.toFixed(4)}</span>
-            </div>
-            <div className={`rounded-full border px-3 py-1 text-xs font-semibold ${verdictStyle}`}>
-              Verdict: {verdictText}
-            </div>
-          </div>
-
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <div
               className={[

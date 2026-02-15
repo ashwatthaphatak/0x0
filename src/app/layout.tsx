@@ -3,9 +3,9 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title:       "DeepFake Defense",
-  description: "Vaccinate your images against deepfake manipulation",
-  authors:     [{ name: "DeepFake Defense Team" }],
+  title:       "Vaxel",
+  description: "Vaxel protects images against deepfake manipulation",
+  authors:     [{ name: "Vaxel Team" }],
 };
 
 export const viewport: Viewport = {
@@ -15,7 +15,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" data-theme="dark">
       <body className="antialiased font-sans">{children}</body>
     </html>
   );

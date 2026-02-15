@@ -381,28 +381,15 @@ export function ResultViewer({ original, result, onReset }: ResultViewerProps) {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="flex flex-col">
-            <span className="text-xs text-slate-500 uppercase tracking-widest">Protection Score</span>
-            <span className={`text-3xl font-bold tabular-nums ${scoreColor}`}>
-              {result.score.toFixed(1)}%
-            </span>
-          </div>
-          <div
-            className={[
-              "px-3 py-1 rounded-full text-sm font-semibold border",
-              result.score >= 80
-                ? "bg-emerald-900/60 text-emerald-300 border-emerald-700"
-                : result.score >= 50
-                  ? "bg-yellow-900/60 text-yellow-300 border-yellow-700"
-                  : "bg-red-900/60 text-red-300 border-red-700",
-            ].join(" ")}
-          >
-            {result.score >= 80 ? "Protected" : result.score >= 50 ? "Partial" : "Weak"}
-          </div>
-        </div>
-        <span className="text-xs text-slate-500">{result.isLocal ? "Local" : "Cloud"}</span>
+      <div className="flex flex-col gap-1">
+        <span className="text-[11px] uppercase tracking-[0.1em] text-slate-500">Protection Score</span>
+        <span
+          className={`text-3xl font-bold tabular-nums ${scoreColor}`}
+          title="Estimated defense quality after sanitization. Higher is better."
+        >
+          {result.score.toFixed(1)}%
+        </span>
+        <p className="text-xs text-slate-500">Estimated defense quality. Higher is better.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

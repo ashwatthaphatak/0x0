@@ -1,6 +1,62 @@
-# DeepFake Defense Desktop Platform
+# Vaxel
 
-Proactively protect images against deepfake manipulation using Texture Feature Perturbation (TFP), based on Zhang et al. (2025).
+Protect your identity.
+
+Vaxel is a desktop app that proactively sanitizes images to make deepfake manipulation less effective while preserving visual quality.
+
+## Hackathon Submission
+
+### Problem
+
+People are often required to upload headshots into public or semi-public systems, and those images can be reused for identity theft.
+
+High-risk upload scenarios include:
+
+- Online verification flows
+- Photo submissions for IDs (government IDs, school IDs, work IDs, and similar systems)
+
+Most tools focus on detecting fake media after the damage is done. Users need prevention before sharing images.
+
+### Solution
+
+Vaxel applies texture-focused perturbations to an image before publication. These perturbations are visually subtle for humans but disruptive for deepfake pipelines.
+
+This specifically helps defend against widely used face-attribute manipulation filters that can be abused for identity theft, including:
+
+- Hair color modification
+- Apparent age modification
+- Identity misuse workflows based on manipulated headshots
+
+### Why This Matters
+
+- Prevention-first instead of detection-only
+- Local, privacy-preserving workflow
+- Simple UX for non-technical users
+- First step toward broader fraud prevention
+
+Vaxel is designed as a first practical step toward stopping fraud driven by manipulated identity photos.
+
+## What Vaxel Does
+
+- Upload and crop an image
+- Apply one-click sanitization
+- Show a `Protection Score` percentage (higher is better)
+- Run optional local deepfake attack simulation for comparison
+
+## Core Features
+
+- Desktop app built with Tauri (macOS/Windows/Linux packaging)
+- Local Python defense engine (no cloud required for core flow)
+- Three protection levels (`Low`, `Medium`, `High`)
+- Side-by-side result preview and export
+- Optional webcam capture in upload flow
+
+## Tech Stack
+
+- Frontend: Next.js 14, React, Tailwind CSS
+- Desktop Shell: Tauri 2 (Rust)
+- ML Engine: Python (PyTorch, OpenCV, scikit-image)
+- Optional Cloud Path: Modal backend (`modal_backend/`)
 
 ## Architecture
 
@@ -17,29 +73,33 @@ Proactively protect images against deepfake manipulation using Texture Feature P
 └─────────────────────────────────────────────────────┘
 ```
 
-## Full Setup Tutorial (First-Time Clone)
+## Demo Links
 
-These steps are written for a brand new machine/project clone.
+- Demo Video: `<add-link>`
+- Presentation Slides: `<add-link>`
+- Submission Page: `<add-link>`
 
-### 1. Install prerequisites
+## Quick Start (Local Development)
 
-| Tool | Required version | Why |
-|---|---|---|
-| Node.js | 18+ (20 LTS recommended) | Next.js + Tauri frontend |
-| npm | Comes with Node.js | Package manager used by this repo |
-| Rust | stable (1.77+ recommended) | Tauri desktop shell |
-| Python | 3.11 recommended | Local defense engine |
+### 1. Prerequisites
 
-Install Tauri OS prerequisites for your platform first:
+| Tool    | Version                    |
+| ------- | -------------------------- |
+| Node.js | 18+ (20 LTS recommended)   |
+| npm     | bundled with Node          |
+| Rust    | stable (1.77+ recommended) |
+| Python  | 3.11 recommended           |
+
+Install Tauri platform prerequisites first:
 https://tauri.app/start/prerequisites/
 
-If you are on macOS, also install Xcode Command Line Tools:
+On macOS:
 
 ```bash
 xcode-select --install
 ```
 
-### 2. Clone the repo and install JavaScript dependencies
+### 2. Install dependencies
 
 ```bash
 git clone <repo-url>
@@ -47,9 +107,7 @@ cd 0x0
 npm install
 ```
 
-### 3. Create a Python environment for the local engine
-
-Use a dedicated virtual environment so dependencies are isolated.
+### 3. Create Python environment
 
 ```bash
 python3.11 -m venv .venv
@@ -58,116 +116,21 @@ python -m pip install --upgrade pip
 python -m pip install -r python_engine/requirements.txt
 ```
 
-### 4. Configure required environment variable
-
-The local engine in dev mode uses `python_engine/main.py` and expects a Python interpreter that already has the ML dependencies installed.
+### 4. Configure local engine interpreter
 
 ```bash
 export DEEPFAKE_DEFENSE_PYTHON="$(pwd)/.venv/bin/python"
 ```
 
-Optional: persist it for future terminal sessions (`zsh`):
-
-```bash
-echo 'export DEEPFAKE_DEFENSE_PYTHON="/ABSOLUTE/PATH/TO/0x0/.venv/bin/python"' >> ~/.zshrc
-source ~/.zshrc
-```
-
-### 5. Optional cloud mode configuration
-
-If you want Cloud mode in the UI, set a Modal backend URL in `.env.local`.
-
-```bash
-cat > .env.local <<'EOF_ENV'
-NEXT_PUBLIC_MODAL_BASE_URL=https://your-modal-endpoint.modal.run
-EOF_ENV
-```
-
-If you only need local mode, skip this step.
-
-### 6. Optional but recommended: preload StarGAN weights
-
-This avoids first-run delays for local deepfake attack testing.
-
-```bash
-"$DEEPFAKE_DEFENSE_PYTHON" python_engine/download_stargan_weights.py
-```
-
-If you already have a weight file:
-
-```bash
-"$DEEPFAKE_DEFENSE_PYTHON" python_engine/download_stargan_weights.py --from-file /absolute/path/to/celeba-128x128-5attrs.zip
-```
-
-### 7. Run the desktop app (development)
-
-From the repo root:
+### 5. Run app
 
 ```bash
 npm run tauri dev
 ```
 
-This runs:
-- Next.js frontend (`npm run dev`)
-- Tauri desktop shell
-- Python local engine via `DEEPFAKE_DEFENSE_PYTHON`
+## Build Desktop App (Submission/Distribution)
 
-### 8. First run checks on macOS (camera feature)
-
-This app includes webcam capture in the upload flow.
-
-1. Launch with `npm run tauri dev`.
-2. Click `Use Camera Instead`.
-3. Allow the macOS camera prompt.
-4. If previously denied, enable camera access in `System Settings > Privacy & Security > Camera`.
-
-### 9. Verify local engine readiness
-
-Run this command in the same terminal/session:
-
-```bash
-"$DEEPFAKE_DEFENSE_PYTHON" -c "import torch,torchvision,cv2,PIL,numpy,skimage; print('python deps ok')"
-```
-
-Expected output:
-
-```text
-python deps ok
-```
-
-## Optional: Deploy the Modal Cloud Backend
-
-Use this only if you want Cloud mode.
-
-### 1. Install Modal CLI and authenticate
-
-```bash
-python3 -m pip install --upgrade modal
-modal setup
-```
-
-### 2. Install backend Python dependencies (recommended in a dedicated env)
-
-```bash
-python3 -m venv .venv-modal
-source .venv-modal/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -r modal_backend/requirements.txt
-```
-
-### 3. Deploy
-
-```bash
-modal deploy modal_backend/app.py
-```
-
-Copy the printed web endpoint and place it in `.env.local` as `NEXT_PUBLIC_MODAL_BASE_URL`.
-
-## Build a Desktop Bundle (Installer/App)
-
-For packaged builds, create the Python sidecar binary first, then build Tauri.
-
-### 1. Build sidecar binary
+### 1. Build Python sidecar binary
 
 ```bash
 cd python_engine
@@ -176,51 +139,41 @@ PYTHON_BIN="$DEEPFAKE_DEFENSE_PYTHON" ./build_binary.sh
 cd ..
 ```
 
-This writes a platform-specific file into `src-tauri/binaries/` named like:
-- `defense-engine-aarch64-apple-darwin`
-- `defense-engine-x86_64-pc-windows-msvc.exe`
-
 ### 2. Build installers
 
 ```bash
 npm run tauri build
 ```
 
-Artifacts are placed under `src-tauri/target/release/bundle/`.
+Artifacts are generated in:
+`src-tauri/target/release/bundle/`
 
-## Troubleshooting
+## Optional Cloud Mode
 
-### Error: "Local Python engine is not ready"
-
-Cause: `DEEPFAKE_DEFENSE_PYTHON` is unset or points to an interpreter without required packages.
-
-Fix:
+If you want cloud processing, configure:
 
 ```bash
-export DEEPFAKE_DEFENSE_PYTHON="$(pwd)/.venv/bin/python"
-"$DEEPFAKE_DEFENSE_PYTHON" -c "import torch,torchvision,cv2,PIL,numpy,skimage; print('ok')"
+cat > .env.local <<'EOF_ENV'
+NEXT_PUBLIC_MODAL_BASE_URL=https://your-modal-endpoint.modal.run
+EOF_ENV
 ```
 
-### Error: camera does not open in desktop app
+Deploy backend from `modal_backend/` if needed.
 
-Cause: macOS permission denied previously.
+## Judging-Relevant Highlights
 
-Fix: enable camera permission for the app in `System Settings > Privacy & Security > Camera`, then relaunch the app.
+- **Innovation:** prevention-focused image immunization workflow
+- **Impact:** reduces identity-theft risk for publicly uploaded headshots
+- **Technical Depth:** Rust desktop shell + Next.js UI + Python ML engine
+- **Usability:** one primary action flow for non-technical users
 
-### Error: sidecar not found during packaged run
+## Current Scope / Limitations
 
-Cause: sidecar binary was not built before `tauri build`.
+- Core production path is local-first
+- Cloud mode is optional and depends on backend deployment
+- Quality and robustness vary by attack/model family
 
-Fix:
-
-```bash
-cd python_engine
-PYTHON_BIN="$DEEPFAKE_DEFENSE_PYTHON" ./build_binary.sh
-cd ..
-npm run tauri build
-```
-
-## Project Structure (high level)
+## Repository Layout
 
 ```text
 .
@@ -228,7 +181,23 @@ npm run tauri build
 ├── src-tauri/                   # Rust/Tauri desktop shell
 ├── python_engine/               # Local defense engine (Python)
 ├── modal_backend/               # Optional cloud backend
-├── next.config.js               # output: "export" for Tauri
+├── deepfake_defense/            # Core defense/attack pipeline modules
 ├── package.json
 └── README.md
 ```
+
+## Team
+
+**Project Name:** `Vaxel`
+
+**Team Members**
+
+- Ashwattha Phatak
+- Anish Mulay
+- Akshay Mulay
+
+**Contact**
+
+- aaphatak@ncsu.edu
+- amulay2@ncsu.edu
+- adongar@ncsu.edu

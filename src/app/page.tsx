@@ -208,8 +208,8 @@ export default function HomePage() {
             </svg>
           </div>
           <div>
-            <h1 className="font-bold text-base leading-none">DeepFake Defense</h1>
-            <p className="text-[10px] text-slate-500 mt-0.5">Texture Feature Perturbation</p>
+            <h1 className="font-medium tracking-tight text-base leading-none">Vaxel</h1>
+            <p className="text-[10px] text-slate-500 mt-0.5">Protect your identity</p>
           </div>
         </div>
         <span className="text-xs text-slate-600 font-mono">v{version}</span>
@@ -220,14 +220,7 @@ export default function HomePage() {
 
         {/* Left panel – settings */}
         <aside className="w-full lg:w-80 xl:w-96 border-b lg:border-b-0 lg:border-r border-slate-800/60 p-6 flex flex-col gap-6">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-300 mb-1">How it works</h2>
-            <p className="text-xs text-slate-500 leading-relaxed">
-              Upload a photo and click <strong className="text-slate-400">Sanitize</strong>.
-              We inject an imperceptible adversarial perturbation into texture regions,
-              breaking deepfake filters <em>before</em> they can manipulate your image.
-            </p>
-          </div>
+          <h2 className="text-sm font-semibold text-slate-300">Settings</h2>
 
           <ComputeToggle
             mode={mode}
@@ -241,21 +234,6 @@ export default function HomePage() {
             disabled={isProcessing}
           />
 
-          {/* Processing info */}
-          <div className="flex flex-col gap-2 text-xs text-slate-500">
-            <div className="flex items-start gap-2">
-              <span className="text-indigo-400 mt-0.5">★</span>
-              <span>Your image is processed at 256 × 256 px internally for local deepfake testing.</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-indigo-400 mt-0.5">★</span>
-              <span>Local mode never sends data off-device.</span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className="text-indigo-400 mt-0.5">★</span>
-              <span>Perturbation is invisible: PSNR ≥ 38 dB.</span>
-            </div>
-          </div>
         </aside>
 
         {/* Right panel – main workflow */}
@@ -264,12 +242,7 @@ export default function HomePage() {
           {/* Upload stage */}
           {stage === "upload" && (
             <div className="flex flex-col gap-4">
-              <div>
-                <h2 className="text-lg font-semibold">Upload Image</h2>
-                <p className="text-sm text-slate-400 mt-0.5">
-                  Drag & drop or browse to load your photo
-                </p>
-              </div>
+              <h2 className="text-lg font-semibold">Upload Image</h2>
               <ImageDropzone
                 onImageLoaded={handleImageLoaded}
                 disabled={false}
@@ -280,12 +253,7 @@ export default function HomePage() {
           {/* Crop stage */}
           {stage === "crop" && (
             <div className="flex flex-col gap-4">
-              <div>
-                <h2 className="text-lg font-semibold">Crop Image</h2>
-                <p className="text-sm text-slate-400 mt-0.5">
-                  Adjust the crop area then confirm
-                </p>
-              </div>
+              <h2 className="text-lg font-semibold">Crop Image</h2>
               <ImageCropper
                 imageSrc={rawPreviewUrl}
                 onConfirm={handleCropConfirm}
@@ -298,12 +266,7 @@ export default function HomePage() {
           {stage === "ready" && (
             <div className="flex flex-col gap-6">
               <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold">Ready to Protect</h2>
-                  <p className="text-sm text-slate-400 mt-0.5">
-                    Image loaded — click Sanitize to inject protection
-                  </p>
-                </div>
+                <h2 className="text-lg font-semibold">Ready</h2>
                 <button
                   onClick={handleReset}
                   className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
@@ -321,8 +284,7 @@ export default function HomePage() {
                     className="w-full h-full object-contain"
                   />
                   <div className="absolute top-3 left-3 px-2 py-1 rounded-md bg-black/60 text-xs text-white font-medium">
-                    Preview · {mode === "local" ? "Local" : "Cloud"} ·{" "}
-                    {["low","medium","high"].find((l) => l === level)}
+                    Preview
                   </div>
                 </div>
               )}
@@ -341,12 +303,7 @@ export default function HomePage() {
           {/* Processing stage */}
           {stage === "processing" && (
             <div className="flex flex-col gap-6">
-              <div>
-                <h2 className="text-lg font-semibold">Processing…</h2>
-                <p className="text-sm text-slate-400 mt-0.5">
-                  {mode === "local" ? "Running local defense engine" : "Processing in the cloud"}
-                </p>
-              </div>
+              <h2 className="text-lg font-semibold">Processing…</h2>
 
               {croppedUrl && (
                 <div className="relative w-full h-48 rounded-2xl overflow-hidden bg-slate-900">
@@ -371,12 +328,7 @@ export default function HomePage() {
           {/* Complete stage */}
           {stage === "complete" && result && (
             <div className="flex flex-col gap-6">
-              <div>
-                <h2 className="text-lg font-semibold">Protection Applied ✓</h2>
-                <p className="text-sm text-slate-400 mt-0.5">
-                  Compare the original and sanitized images side by side, then run a deepfake test.
-                </p>
-              </div>
+              <h2 className="text-lg font-semibold">Done</h2>
               <ResultViewer
                 original={comparisonOriginal}
                 result={result}
@@ -429,11 +381,6 @@ export default function HomePage() {
                 <p className="text-sm text-red-400 font-mono break-words">
                   {error ?? "An unexpected error occurred."}
                 </p>
-                {mode === "local" && (
-                  <p className="text-xs text-slate-500 mt-3">
-                    Tip: Local compute is active. Cloud mode is coming soon.
-                  </p>
-                )}
               </div>
               <div className="flex gap-3">
                 <button
@@ -456,7 +403,7 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer className="px-6 py-3 border-t border-slate-800/60 text-center text-xs text-slate-600">
-        DeepFake Defense · Texture Feature Perturbation · Based on Zhang et al., 2025
+        Vaxel · Texture Feature Perturbation · Based on Zhang et al., 2025
       </footer>
     </div>
   );

@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  --font-inter: "SF Pro Text", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --app-font: -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 html, body {
@@ -16,8 +16,15 @@ html, body {
 
 /* Disable Tauri's default context menu globally (optional UX choice) */
 body {
+  font-family: var(--app-font);
+  font-weight: 400;
   -webkit-user-select: none;
   user-select: none;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 500;
+  letter-spacing: -0.02em;
 }
 
 /* Allow text selection inside inputs and textareas */

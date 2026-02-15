@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default permissions for DeepFake Defense",
+  "description": "Default permissions for Vaxel",
   "windows": ["main"],
   "permissions": [
     "core:default",

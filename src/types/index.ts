@@ -5,9 +5,9 @@ export type ComputeMode = "local" | "cloud";
 export type ProtectionLevel = "low" | "medium" | "high";
 
 export const PROTECTION_LEVELS: Record<ProtectionLevel, { label: string; epsilon: number; description: string }> = {
-  low:    { label: "Low",    epsilon: 0.02, description: "Subtle – PSNR ≥ 42 dB" },
-  medium: { label: "Medium", epsilon: 0.05, description: "Balanced – PSNR ≈ 38 dB" },
-  high:   { label: "High",   epsilon: 0.08, description: "Maximum protection, slight noise" },
+  low:    { label: "Low",    epsilon: 0.02, description: "Subtle protection" },
+  medium: { label: "Medium", epsilon: 0.05, description: "Balanced protection" },
+  high:   { label: "High",   epsilon: 0.08, description: "Maximum protection" },
 };
 
 export type ProcessingState =
