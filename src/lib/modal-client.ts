@@ -1,151 +1,146 @@
-// src/lib/modal-client.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// Client for the Modal.com cloud backend.
-// Implements: upload → job polling → result download.
-// ─────────────────────────────────────────────────────────────────────────────
+// src/api/modalClient.ts
 
-import type { CloudJobStatus, ProtectionResult } from "@/types";
+/**
+ * Modal Backend API Client
+ * Handles cloud-based image protection via Modal serverless backend
+ */
 
-// ── Configuration ─────────────────────────────────────────────────────────────
-// Set NEXT_PUBLIC_MODAL_BASE_URL in your .env.local to override.
-const MODAL_BASE_URL =
-  process.env.NEXT_PUBLIC_MODAL_BASE_URL ?? "https://your-modal-endpoint.modal.run";
+const MODAL_API_URL = "https://akshay-3046--deepfake-defense-web.modal.run";
 
-const POLL_INTERVAL_MS = 2_000;
-const MAX_POLL_ATTEMPTS = 300; // 10 minutes max
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface IngestResponse {
-  job_id: string;
-  status: string;
-}
-
-interface StatusResponse {
+export interface ProtectionJobStatus {
   job_id: string;
   status: "pending" | "running" | "complete" | "failed";
-  progress?: number;
+  progress: number;
   result_url?: string;
   score?: number;
-  message?: string;
+  message: string;
 }
 
-// ── API Calls ─────────────────────────────────────────────────────────────────
+export interface ProtectionResult {
+  imageUrl: string;
+  score: number;
+  jobId: string;
+}
 
-export async function uploadToModal(
-  imageBlob: Blob,
-  epsilon: number,
-  idToken?: string
+/**
+ * Check if Modal backend is healthy
+ */
+export async function checkModalHealth(): Promise<boolean> {
+  try {
+    const response = await fetch(`${MODAL_API_URL}/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await response.json();
+    return data.status === "ok";
+  } catch (error) {
+    console.error("Modal health check failed:", error);
+    return false;
+  }
+}
+
+/**
+ * Submit an image for protection to Modal backend
+ */
+export async function submitImageForProtection(
+  imageFile: File,
+  epsilon: number = 0.05
 ): Promise<string> {
   const formData = new FormData();
-  formData.append("image",   imageBlob, "input.png");
+  formData.append("image", imageFile);
   formData.append("epsilon", epsilon.toString());
 
-  const headers: Record<string, string> = {};
-  if (idToken) {
-    headers["Authorization"] = `Bearer ${idToken}`;
-  }
-
-  const response = await fetch(`${MODAL_BASE_URL}/ingest`, {
-    method:  "POST",
-    headers,
-    body:    formData,
+  const response = await fetch(`${MODAL_API_URL}/ingest`, {
+    method: "POST",
+    body: formData,
   });
 
   if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Upload failed (${response.status}): ${text}`);
+    const error = await response.text();
+    throw new Error(`Failed to submit image: ${error}`);
   }
 
-  const data: IngestResponse = await response.json();
-  if (!data.job_id) throw new Error("Modal did not return a job_id");
+  const data = await response.json();
   return data.job_id;
 }
 
-export async function pollJobStatus(jobId: string): Promise<StatusResponse> {
-  const response = await fetch(`${MODAL_BASE_URL}/status/${jobId}`);
-  if (!response.ok) {
-    throw new Error(`Status check failed (${response.status})`);
-  }
-  return response.json() as Promise<StatusResponse>;
-}
-
-export async function downloadResult(resultUrl: string): Promise<Blob> {
-  const response = await fetch(resultUrl);
-  if (!response.ok) throw new Error(`Download failed (${response.status})`);
-  return response.blob();
-}
-
-// ── High-Level Flow ──────────────────────────────────────────────────────────
-
-export async function processInCloud(
-  imageBlob: Blob,
-  epsilon: number,
-  idToken: string | undefined,
-  onProgress: (update: { percent: number; message: string }) => void
-): Promise<ProtectionResult> {
-  // 1. Upload
-  onProgress({ percent: 5, message: "Uploading image to cloud…" });
-  const jobId = await uploadToModal(imageBlob, epsilon, idToken);
-
-  // 2. Poll
-  onProgress({ percent: 15, message: "Job queued – waiting for worker…" });
-
+/**
+ * Poll job status until complete
+ */
+export async function pollJobStatus(
+  jobId: string,
+  onProgress?: (status: ProtectionJobStatus) => void
+): Promise<ProtectionJobStatus> {
+  const maxAttempts = 120; // 2 minutes max (120 * 1s)
   let attempts = 0;
-  while (attempts < MAX_POLL_ATTEMPTS) {
-    await delay(POLL_INTERVAL_MS);
+
+  while (attempts < maxAttempts) {
+    const response = await fetch(`${MODAL_API_URL}/status/${jobId}`);
+    
+    if (!response.ok) {
+      throw new Error(`Failed to get job status: ${response.statusText}`);
+    }
+
+    const status: ProtectionJobStatus = await response.json();
+    
+    if (onProgress) {
+      onProgress(status);
+    }
+
+    if (status.status === "complete" || status.status === "failed") {
+      return status;
+    }
+
+    // Wait 1 second before next poll
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     attempts++;
-
-    const status = await pollJobStatus(jobId);
-
-    const percent = Math.min(
-      15 + Math.round(((status.progress ?? 0) / 100) * 75),
-      90
-    );
-    onProgress({ percent, message: statusMessage(status.status) });
-
-    if (status.status === "complete") {
-      if (!status.result_url) throw new Error("Job complete but no result URL returned");
-
-      onProgress({ percent: 95, message: "Downloading protected image…" });
-      // Return the URL directly; saving is handled by the UI layer
-      onProgress({ percent: 100, message: "Complete!" });
-
-      return {
-        outputPath: status.result_url,
-        score:      status.score ?? 0,
-        isLocal:    false,
-      };
-    }
-
-    if (status.status === "failed") {
-      throw new Error(status.message ?? "Cloud processing failed");
-    }
   }
 
-  throw new Error("Cloud job timed out after 10 minutes. Please try again.");
+  throw new Error("Job timeout: exceeded maximum polling time");
 }
 
-function statusMessage(status: string): string {
-  switch (status) {
-    case "pending": return "Job queued – waiting for worker…";
-    case "running": return "Worker processing image…";
-    case "complete": return "Processing complete!";
-    case "failed":  return "Processing failed.";
-    default:        return `Status: ${status}`;
+/**
+ * Complete protection workflow: submit → poll → return result
+ */
+export async function protectImageCloud(
+  imageFile: File,
+  epsilon: number = 0.05,
+  onProgress?: (progress: number, message: string) => void
+): Promise<ProtectionResult> {
+  // Submit image
+  if (onProgress) onProgress(5, "Submitting to cloud...");
+  const jobId = await submitImageForProtection(imageFile, epsilon);
+
+  // Poll for completion
+  const finalStatus = await pollJobStatus(jobId, (status) => {
+    if (onProgress) {
+      onProgress(status.progress, status.message);
+    }
+  });
+
+  if (finalStatus.status === "failed") {
+    throw new Error(`Protection failed: ${finalStatus.message}`);
   }
+
+  if (!finalStatus.result_url || !finalStatus.score) {
+    throw new Error("Protection completed but no result returned");
+  }
+
+  return {
+    imageUrl: finalStatus.result_url,
+    score: finalStatus.score,
+    jobId,
+  };
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-// ── Quota / Auth helpers ──────────────────────────────────────────────────────
-
-export async function getAnonymousQuotaKey(): Promise<string> {
-  // In production, request a signed anonymous token from your backend.
-  // For now, generate a client-side fingerprint (not cryptographically secure).
-  const arr = new Uint8Array(16);
-  crypto.getRandomValues(arr);
-  return Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("");
+/**
+ * Download base64 data URL as a file
+ */
+export function downloadDataUrl(dataUrl: string, filename: string): void {
+  const link = document.createElement("a");
+  link.href = dataUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }

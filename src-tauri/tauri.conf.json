@@ -63,5 +63,34 @@
         "bundleMediaFramework": false
       }
     }
+  },
+  "plugins": {
+    "shell": {
+      "open": true,
+      "scope": [
+        {
+          "name": "defense-engine",
+          "cmd": "binaries/defense-engine",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    },
+    "dialog": {
+      "open": true,
+      "save": true
+    },
+    "fs": {
+      "scope": [
+        "$APPDATA/*",
+        "$APPLOCALDATA/*",
+        "$TEMP/*"
+      ]
+    },
+    "http": {
+      "scope": [
+        "https://akshay-3046--deepfake-defense-web.modal.run/*"
+      ]
+    }
   }
 }
