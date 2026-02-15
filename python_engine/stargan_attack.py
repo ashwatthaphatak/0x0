@@ -56,10 +56,10 @@ class ResidualBlock(nn.Module):
         super().__init__()
         self.main = nn.Sequential(
             nn.Conv2d(dim_in, dim_out, 3, 1, 1, bias=False),
-            nn.InstanceNorm2d(dim_out, affine=True, track_running_stats=True),
+            nn.InstanceNorm2d(dim_out, affine=True),
             nn.ReLU(inplace=True),
             nn.Conv2d(dim_out, dim_out, 3, 1, 1, bias=False),
-            nn.InstanceNorm2d(dim_out, affine=True, track_running_stats=True),
+            nn.InstanceNorm2d(dim_out, affine=True),
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -74,7 +74,7 @@ class StarGANGenerator(nn.Module):
 
         layers: list[nn.Module] = [
             nn.Conv2d(3 + c_dim, conv_dim, 7, 1, 3, bias=False),
-            nn.InstanceNorm2d(conv_dim, affine=True, track_running_stats=True),
+            nn.InstanceNorm2d(conv_dim, affine=True),
             nn.ReLU(inplace=True),
         ]
 
@@ -83,7 +83,7 @@ class StarGANGenerator(nn.Module):
             layers.extend(
                 [
                     nn.Conv2d(curr_dim, curr_dim * 2, 4, 2, 1, bias=False),
-                    nn.InstanceNorm2d(curr_dim * 2, affine=True, track_running_stats=True),
+                    nn.InstanceNorm2d(curr_dim * 2, affine=True),
                     nn.ReLU(inplace=True),
                 ]
             )
@@ -96,7 +96,7 @@ class StarGANGenerator(nn.Module):
             layers.extend(
                 [
                     nn.ConvTranspose2d(curr_dim, curr_dim // 2, 4, 2, 1, bias=False),
-                    nn.InstanceNorm2d(curr_dim // 2, affine=True, track_running_stats=True),
+                    nn.InstanceNorm2d(curr_dim // 2, affine=True),
                     nn.ReLU(inplace=True),
                 ]
             )
@@ -254,7 +254,26 @@ def _load_generator(
     }
 
     model = StarGANGenerator(conv_dim=64, c_dim=5, repeat_num=6).to(device)
-    model.load_state_dict(cleaned, strict=False)
+    load_status = model.load_state_dict(cleaned, strict=False)
+
+    model_keys = set(model.state_dict().keys())
+    ckpt_keys = set(cleaned.keys())
+    matched = len(model_keys & ckpt_keys)
+    match_ratio = matched / max(1, len(model_keys))
+
+    if match_ratio < 0.9:
+        raise RuntimeError(
+            "StarGAN checkpoint appears incompatible with expected CelebA-128 generator "
+            f"(key match ratio={match_ratio:.2f}). "
+            "Use checkpoint 200000-G.ckpt from celeba-128x128-5attrs."
+        )
+
+    if len(load_status.unexpected_keys) > 0 and match_ratio < 0.98:
+        raise RuntimeError(
+            "Unexpected keys detected while loading StarGAN checkpoint. "
+            "This likely indicates the wrong pretrained file."
+        )
+
     model.eval()
 
     _MODEL_CACHE["model"] = model
