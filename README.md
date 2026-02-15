@@ -35,43 +35,66 @@ Proactively **vaccinate** images against deepfake manipulation using **Texture F
 Install the OS-level dependencies required by Tauri for your platform:
 https://tauri.app/start/prerequisites/
 
-### 2. Clone and install JavaScript dependencies
+### 2. Clone and enter the repo
 
 ```bash
 git clone <repo-url>
 cd 0x0
-npm install
 ```
 
-### 3. Install Python engine dependencies
-
-Pick the exact Python interpreter you want this app to use, then install engine
-dependencies into that interpreter.
-
-Example:
+### 3. Create and activate a Python virtual environment
 
 ```bash
-/absolute/path/to/python -m pip install --upgrade pip
-/absolute/path/to/python -m pip install -r python_engine/requirements.txt
+python3 -m venv .venv_deepfake
+source .venv_deepfake/bin/activate
 ```
 
-### 4. Set `DEEPFAKE_DEFENSE_PYTHON`
+### 4. Install dependencies
+
+```bash
+npm install
+python -m pip install --upgrade pip
+python -m pip install -r python_engine/requirements.txt
+```
+
+### 5. Resolve and export runtime paths
+
+Get the repo root absolute path:
+
+```bash
+pwd
+```
+
+Get the active Python absolute path:
+
+```bash
+python -c "import sys; print(sys.executable)"
+```
+
+Export both for this terminal session:
 
 In dev mode, Tauri runs `python_engine/main.py` directly and checks
 `DEEPFAKE_DEFENSE_PYTHON` first.
 
 ```bash
-export DEEPFAKE_DEFENSE_PYTHON=/absolute/path/to/python
+export REPO_ROOT="$(pwd)"
+export DEEPFAKE_DEFENSE_PYTHON="$(python -c 'import sys; print(sys.executable)')"
 ```
 
-To persist this on `zsh`:
+Optional: print both values to verify:
 
 ```bash
-echo 'export DEEPFAKE_DEFENSE_PYTHON=/absolute/path/to/python' >> ~/.zshrc
-source ~/.zshrc
+echo "$REPO_ROOT"
+echo "$DEEPFAKE_DEFENSE_PYTHON"
 ```
 
-### 5. Optional: configure Cloud mode
+To convert any relative file path to an absolute path:
+
+```bash
+python -c "import os,sys; print(os.path.abspath(sys.argv[1]))" <relative-path>
+```
+
+### 6. Optional: configure Cloud mode
 
 Cloud mode uses `NEXT_PUBLIC_MODAL_BASE_URL` from `.env.local`.
 
@@ -83,41 +106,42 @@ EOF
 
 If you only need local mode, skip this step.
 
-### 6. Optional but recommended: preload StarGAN weights
+### 7. Optional but recommended: preload StarGAN weights
 
 ```bash
 "$DEEPFAKE_DEFENSE_PYTHON" python_engine/download_stargan_weights.py
 ```
 
-Or import from a file you already have:
+Or import from a local `.zip`/`.ckpt`:
 
 ```bash
-"$DEEPFAKE_DEFENSE_PYTHON" python_engine/download_stargan_weights.py --from-file /absolute/path/to/celeba-128x128-5attrs.zip
-# or
-"$DEEPFAKE_DEFENSE_PYTHON" python_engine/download_stargan_weights.py --from-file /absolute/path/to/200000-G.ckpt
+MODEL_FILE_REL="<relative-path-to-zip-or-ckpt>"
+MODEL_FILE_ABS="$(python -c "import os,sys; print(os.path.abspath(sys.argv[1]))" "$MODEL_FILE_REL")"
+"$DEEPFAKE_DEFENSE_PYTHON" python_engine/download_stargan_weights.py --from-file "$MODEL_FILE_ABS"
 ```
 
-### 7. Start the app in development
-
-This is the exact flow used in this repo:
+### 8. Start the app in development
 
 ```bash
-export DEEPFAKE_DEFENSE_PYTHON=/Users/anish/miniforge3/bin/python
 npm run tauri dev
 ```
 
-For your friend, keep the command shape identical and only change the Python
-path.
+### 9. Future runs
 
-### 8. Troubleshooting local engine readiness
+```bash
+cd 0x0
+source .venv_deepfake/bin/activate
+export DEEPFAKE_DEFENSE_PYTHON="$(python -c 'import sys; print(sys.executable)')"
+npm run tauri dev
+```
 
-If the app says local engine is unavailable, verify the interpreter and deps:
+### 10. Troubleshooting local engine readiness
 
 ```bash
 "$DEEPFAKE_DEFENSE_PYTHON" -c "import torch,torchvision,cv2,PIL,numpy,skimage; print('python deps ok')"
 ```
 
-### 9. Build distributable desktop bundles
+### 11. Build distributable desktop bundles
 
 ```bash
 npm run tauri build
@@ -125,7 +149,7 @@ npm run tauri build
 
 Outputs: `.msi` (Windows), `.dmg` (macOS), `.deb`/`.AppImage` (Linux) in `src-tauri/target/release/bundle/`.
 
-### 10. Optional: build the packaged Python sidecar binary
+### 12. Optional: build the packaged Python sidecar binary
 
 This is mostly needed for packaging workflows; regular `tauri dev` can run the
 Python script directly.
