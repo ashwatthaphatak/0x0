@@ -61,13 +61,30 @@ cp .env.example .env.local
 # Edit .env.local with your Modal URL
 ```
 
-### 4. Run in development
+### 4. (Recommended) Preload StarGAN Weights
+
+To avoid first-run deepfake-test download delays/failures, preload the exact
+CelebA-128 StarGAN checkpoint:
+
+```bash
+python3 python_engine/download_stargan_weights.py
+```
+
+Or import from a file you already have:
+
+```bash
+python3 python_engine/download_stargan_weights.py --from-file /absolute/path/to/celeba-128x128-5attrs.zip
+# or
+python3 python_engine/download_stargan_weights.py --from-file /absolute/path/to/200000-G.ckpt
+```
+
+### 5. Run in development
 
 ```bash
 npm run tauri dev
 ```
 
-### 5. Build for distribution
+### 6. Build for distribution
 
 ```bash
 npm run tauri build
