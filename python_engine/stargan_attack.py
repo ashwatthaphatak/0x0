@@ -1,0 +1,356 @@
+"""
+StarGAN attack utilities used by the local sidecar.
+
+This module runs a lightweight attribute-edit attack on both the original and
+sanitized images so the desktop UI can compare attack effectiveness.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+import uuid
+import zipfile
+from pathlib import Path
+from typing import Callable
+
+import requests
+import torch
+import torch.nn as nn
+import torchvision.transforms as transforms
+from PIL import Image
+
+from defense_core import calculate_metrics, save_image
+
+CHECKPOINT_URL = "https://www.dropbox.com/s/7e966qq0nlxwte4/celeba-128x128-5attrs.zip?dl=1"
+CHECKPOINT_REL_PATH = Path("stargan_celeba_128/models/200000-G.ckpt")
+CHECKPOINT_ZIP_NAME = "celeba-128x128-5attrs.zip"
+ATTACK_THRESHOLD = 0.05
+ENV_STARGAN_CKPT = "DEEPFAKE_DEFENSE_STARGAN_CKPT"
+ENV_STARGAN_ZIP = "DEEPFAKE_DEFENSE_STARGAN_ZIP"
+
+ATTRIBUTES: dict[str, list[float]] = {
+    # [Black_Hair, Blond_Hair, Brown_Hair, Male, Young]
+    "blonde_hair": [0.0, 1.0, 0.0, 0.0, 0.0],
+    "old_age": [0.0, 0.0, 0.0, 0.0, 0.0],
+    "male": [0.0, 0.0, 0.0, 1.0, 0.0],
+}
+
+ATTACK_LABELS: dict[str, str] = {
+    "blonde_hair": "Blonde Hair",
+    "old_age": "Old Age",
+    "male": "Male",
+}
+
+_MODEL_CACHE: dict[str, object] = {
+    "model": None,
+    "device": None,
+    "checkpoint": None,
+}
+
+
+class ResidualBlock(nn.Module):
+    """Residual block used by StarGAN generator."""
+
+    def __init__(self, dim_in: int, dim_out: int) -> None:
+        super().__init__()
+        self.main = nn.Sequential(
+            nn.Conv2d(dim_in, dim_out, 3, 1, 1, bias=False),
+            nn.InstanceNorm2d(dim_out, affine=True, track_running_stats=True),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(dim_out, dim_out, 3, 1, 1, bias=False),
+            nn.InstanceNorm2d(dim_out, affine=True, track_running_stats=True),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return x + self.main(x)
+
+
+class StarGANGenerator(nn.Module):
+    """StarGAN v1 generator for CelebA 5 attributes."""
+
+    def __init__(self, conv_dim: int = 64, c_dim: int = 5, repeat_num: int = 6) -> None:
+        super().__init__()
+
+        layers: list[nn.Module] = [
+            nn.Conv2d(3 + c_dim, conv_dim, 7, 1, 3, bias=False),
+            nn.InstanceNorm2d(conv_dim, affine=True, track_running_stats=True),
+            nn.ReLU(inplace=True),
+        ]
+
+        curr_dim = conv_dim
+        for _ in range(2):
+            layers.extend(
+                [
+                    nn.Conv2d(curr_dim, curr_dim * 2, 4, 2, 1, bias=False),
+                    nn.InstanceNorm2d(curr_dim * 2, affine=True, track_running_stats=True),
+                    nn.ReLU(inplace=True),
+                ]
+            )
+            curr_dim *= 2
+
+        for _ in range(repeat_num):
+            layers.append(ResidualBlock(curr_dim, curr_dim))
+
+        for _ in range(2):
+            layers.extend(
+                [
+                    nn.ConvTranspose2d(curr_dim, curr_dim // 2, 4, 2, 1, bias=False),
+                    nn.InstanceNorm2d(curr_dim // 2, affine=True, track_running_stats=True),
+                    nn.ReLU(inplace=True),
+                ]
+            )
+            curr_dim //= 2
+
+        layers.extend([nn.Conv2d(curr_dim, 3, 7, 1, 3, bias=False), nn.Tanh()])
+        self.main = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor, c: torch.Tensor) -> torch.Tensor:
+        c_map = c.view(c.size(0), c.size(1), 1, 1)
+        c_map = c_map.repeat(1, 1, x.size(2), x.size(3))
+        return self.main(torch.cat([x, c_map], dim=1))
+
+
+def normalize_attack_type(attack_type: str | None) -> str:
+    raw = (attack_type or "").strip().lower().replace(" ", "_")
+    aliases = {
+        "blonde": "blonde_hair",
+        "blond_hair": "blonde_hair",
+        "blonde_hair": "blonde_hair",
+        "old": "old_age",
+        "old_age": "old_age",
+        "male": "male",
+    }
+    canonical = aliases.get(raw, raw)
+    if canonical not in ATTRIBUTES:
+        supported = ", ".join(sorted(ATTRIBUTES))
+        raise ValueError(f"Unsupported attack type: {attack_type}. Supported: {supported}")
+    return canonical
+
+
+def resolve_model_root(explicit_dir: str | None = None) -> Path:
+    if explicit_dir:
+        return Path(explicit_dir).expanduser()
+
+    env_dir = os.getenv("DEEPFAKE_DEFENSE_MODEL_DIR", "").strip()
+    if env_dir:
+        return Path(env_dir).expanduser()
+
+    cache_home = os.getenv("XDG_CACHE_HOME", "").strip()
+    if cache_home:
+        return Path(cache_home) / "deepfake-defense"
+
+    return Path.home() / ".cache" / "deepfake-defense"
+
+
+def ensure_checkpoint(
+    model_root: Path,
+    progress: Callable[[str], None] | None = None,
+) -> Path:
+    ckpt_path = model_root / CHECKPOINT_REL_PATH
+    if ckpt_path.exists():
+        return ckpt_path
+
+    ckpt_path.parent.mkdir(parents=True, exist_ok=True)
+    zip_path = ckpt_path.parent / CHECKPOINT_ZIP_NAME
+
+    local_ckpt = os.getenv(ENV_STARGAN_CKPT, "").strip()
+    local_zip = os.getenv(ENV_STARGAN_ZIP, "").strip()
+
+    def _normalize_extracted_checkpoint(source_zip: Path) -> Path:
+        if ckpt_path.exists():
+            return ckpt_path
+
+        candidates = list(model_root.rglob(ckpt_path.name))
+        if not candidates:
+            raise FileNotFoundError(
+                f"Could not find {ckpt_path.name} after extracting {source_zip}."
+            )
+
+        shutil.copy2(candidates[0], ckpt_path)
+        return ckpt_path
+
+    if local_ckpt:
+        source = Path(local_ckpt).expanduser()
+        if not source.exists():
+            raise FileNotFoundError(
+                f"{ENV_STARGAN_CKPT} points to a missing file: {source}"
+            )
+
+        if source.suffix.lower() == ".zip":
+            if progress:
+                progress(f"Extracting StarGAN zip from {source}...")
+            with zipfile.ZipFile(source, "r") as archive:
+                archive.extractall(model_root)
+            return _normalize_extracted_checkpoint(source)
+
+        if progress:
+            progress(f"Using StarGAN checkpoint from {source}...")
+        shutil.copy2(source, ckpt_path)
+        return ckpt_path
+
+    if local_zip:
+        source_zip = Path(local_zip).expanduser()
+        if not source_zip.exists():
+            raise FileNotFoundError(
+                f"{ENV_STARGAN_ZIP} points to a missing file: {source_zip}"
+            )
+        if progress:
+            progress(f"Extracting StarGAN zip from {source_zip}...")
+        with zipfile.ZipFile(source_zip, "r") as archive:
+            archive.extractall(model_root)
+        return _normalize_extracted_checkpoint(source_zip)
+
+    if progress:
+        progress("Downloading StarGAN checkpoint (one-time setup)...")
+
+    response = requests.get(CHECKPOINT_URL, stream=True, timeout=180)
+    response.raise_for_status()
+
+    with open(zip_path, "wb") as out_file:
+        for chunk in response.iter_content(chunk_size=1 << 20):
+            if chunk:
+                out_file.write(chunk)
+
+    if progress:
+        progress("Extracting StarGAN checkpoint...")
+
+    with zipfile.ZipFile(zip_path, "r") as archive:
+        archive.extractall(model_root)
+
+    try:
+        zip_path.unlink(missing_ok=True)
+    except Exception:
+        pass
+
+    return _normalize_extracted_checkpoint(zip_path)
+
+
+def _load_generator(
+    device: torch.device,
+    model_root: Path,
+    progress: Callable[[str], None] | None = None,
+) -> StarGANGenerator:
+    ckpt_path = ensure_checkpoint(model_root, progress)
+
+    cached_model = _MODEL_CACHE.get("model")
+    cached_device = _MODEL_CACHE.get("device")
+    cached_checkpoint = _MODEL_CACHE.get("checkpoint")
+    if (
+        isinstance(cached_model, StarGANGenerator)
+        and cached_device == str(device)
+        and cached_checkpoint == str(ckpt_path)
+    ):
+        return cached_model
+
+    if progress:
+        progress("Loading StarGAN generator...")
+
+    state_dict = torch.load(ckpt_path, map_location=device)
+    cleaned = {
+        k: v
+        for k, v in state_dict.items()
+        if not (k.endswith(".running_mean") or k.endswith(".running_var"))
+    }
+
+    model = StarGANGenerator(conv_dim=64, c_dim=5, repeat_num=6).to(device)
+    model.load_state_dict(cleaned, strict=False)
+    model.eval()
+
+    _MODEL_CACHE["model"] = model
+    _MODEL_CACHE["device"] = str(device)
+    _MODEL_CACHE["checkpoint"] = str(ckpt_path)
+
+    return model
+
+
+def _load_image_128(path: str, device: torch.device) -> torch.Tensor:
+    transform = transforms.Compose(
+        [transforms.Resize((128, 128)), transforms.ToTensor()]
+    )
+    image = Image.open(path).convert("RGB")
+    return transform(image).unsqueeze(0).to(device)
+
+
+@torch.no_grad()
+def _run_stargan_attack(
+    generator: StarGANGenerator,
+    image_tensor: torch.Tensor,
+    attribute: torch.Tensor,
+) -> torch.Tensor:
+    normalized = image_tensor * 2 - 1
+    attacked = generator(normalized, attribute)
+    attacked = (attacked + 1) / 2
+    return torch.clamp(attacked, 0.0, 1.0)
+
+
+def run_attack_comparison(
+    original_path: str,
+    sanitized_path: str,
+    attack_type: str,
+    output_dir: str,
+    progress: Callable[[int, str], None] | None = None,
+    model_dir: str | None = None,
+) -> dict[str, object]:
+    attack_key = normalize_attack_type(attack_type)
+
+    if not os.path.isfile(original_path):
+        raise FileNotFoundError(f"Original image not found: {original_path}")
+    if not os.path.isfile(sanitized_path):
+        raise FileNotFoundError(f"Sanitized image not found: {sanitized_path}")
+
+    def _update(pct: int, msg: str) -> None:
+        if progress:
+            progress(pct, msg)
+
+    _update(10, "Preparing StarGAN attack")
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_root = resolve_model_root(model_dir)
+
+    generator = _load_generator(
+        device,
+        model_root,
+        progress=lambda msg: _update(25, msg),
+    )
+
+    _update(40, "Loading input images")
+    original_tensor = _load_image_128(original_path, device)
+    sanitized_tensor = _load_image_128(sanitized_path, device)
+
+    _update(60, f"Running attack: {ATTACK_LABELS[attack_key]}")
+    attribute = torch.tensor([ATTRIBUTES[attack_key]], dtype=torch.float32, device=device)
+    original_fake = _run_stargan_attack(generator, original_tensor, attribute)
+    sanitized_fake = _run_stargan_attack(generator, sanitized_tensor, attribute)
+
+    _update(80, "Saving attacked images")
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    suffix = uuid.uuid4().hex[:8]
+    original_fake_path = out_dir / f"deepfake-original-{suffix}.png"
+    sanitized_fake_path = out_dir / f"deepfake-sanitized-{suffix}.png"
+
+    save_image(original_fake, str(original_fake_path))
+    save_image(sanitized_fake, str(sanitized_fake_path))
+
+    metrics = calculate_metrics(original_fake, sanitized_fake)
+    divergence = float(metrics["L2"])
+
+    if divergence > ATTACK_THRESHOLD:
+        verdict = "blocked"
+    elif divergence > ATTACK_THRESHOLD * 0.5:
+        verdict = "partial"
+    else:
+        verdict = "not_blocked"
+
+    _update(100, "Deepfake test complete")
+
+    return {
+        "attack_type": attack_key,
+        "attack_label": ATTACK_LABELS[attack_key],
+        "original_fake_path": str(original_fake_path),
+        "sanitized_fake_path": str(sanitized_fake_path),
+        "divergence": divergence,
+        "verdict": verdict,
+    }

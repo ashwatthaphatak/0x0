@@ -8,9 +8,10 @@ import { ComputeToggle }             from "@/components/compute-toggle";
 import { ProtectionLevelSelector }   from "@/components/protection-level-selector";
 import { ProgressTracker }           from "@/components/progress-tracker";
 import { ResultViewer }              from "@/components/result-viewer";
+import { AttackTester }              from "@/components/attack-tester";
 import { useProtection }             from "@/hooks/useProtection";
 import { IS_TAURI, cleanupTempDir, getAppVersion, localPathToUrl } from "@/lib/tauri-bridge";
-import type { ComputeMode, ProtectionLevel, ProcessingState } from "@/types";
+import type { ComputeMode, ProtectionLevel } from "@/types";
 
 // ─── Types & Constants ────────────────────────────────────────────────────────
 
@@ -181,6 +182,7 @@ export default function HomePage() {
   }, [processingState]);
 
   const isProcessing = stage === "processing";
+  const comparisonOriginal = mode === "local" ? (rawPreviewUrl || croppedUrl) : croppedUrl;
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
@@ -357,17 +359,22 @@ export default function HomePage() {
 
           {/* Complete stage */}
           {stage === "complete" && result && (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-6">
               <div>
                 <h2 className="text-lg font-semibold">Protection Applied ✓</h2>
                 <p className="text-sm text-slate-400 mt-0.5">
-                  Drag the slider to compare. Save when ready.
+                  Compare the original and sanitized images side by side, then run a deepfake test.
                 </p>
               </div>
               <ResultViewer
-                original={croppedUrl}
+                original={comparisonOriginal}
                 result={result}
                 onReset={handleReset}
+              />
+              <AttackTester
+                originalPath={rawPath}
+                sanitizedPath={result.outputPath}
+                isLocalResult={result.isLocal}
               />
             </div>
           )}

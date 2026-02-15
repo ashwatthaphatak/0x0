@@ -13,12 +13,35 @@ interface ImageCropperProps {
   onCancel:  () => void;
 }
 
+function loadImageElement(imageSrc: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Image element load failed"));
+    image.src = imageSrc;
+  });
+}
+
+async function loadImageForCanvas(imageSrc: string): Promise<CanvasImageSource> {
+  try {
+    const response = await fetch(imageSrc);
+    if (!response.ok) {
+      throw new Error(`Fetch failed with status ${response.status}`);
+    }
+    const blob = await response.blob();
+    return await createImageBitmap(blob);
+  } catch (err) {
+    console.warn("Falling back to HTMLImageElement for crop source:", err);
+    return await loadImageElement(imageSrc);
+  }
+}
+
 async function getCroppedImg(
   imageSrc: string,
   pixelCrop: Area,
   outputSize = 1024
 ): Promise<{ blob: Blob; dataUrl: string }> {
-  const image = await createImageBitmap(await fetch(imageSrc).then((r) => r.blob()));
+  const image = await loadImageForCanvas(imageSrc);
 
   const canvas       = document.createElement("canvas");
   canvas.width       = outputSize;
@@ -54,6 +77,7 @@ export function ImageCropper({ imageSrc, onConfirm, onCancel }: ImageCropperProp
   const [zoom,       setZoom]       = useState(1);
   const [croppedArea, setCroppedArea] = useState<Area | null>(null);
   const [loading,    setLoading]    = useState(false);
+  const [cropError,  setCropError]  = useState<string | null>(null);
 
   const onCropComplete = useCallback((_: Area, croppedAreaPixels: Area) => {
     setCroppedArea(croppedAreaPixels);
@@ -62,11 +86,13 @@ export function ImageCropper({ imageSrc, onConfirm, onCancel }: ImageCropperProp
   const handleConfirm = useCallback(async () => {
     if (!croppedArea) return;
     setLoading(true);
+    setCropError(null);
     try {
       const { blob, dataUrl } = await getCroppedImg(imageSrc, croppedArea);
       onConfirm(blob, dataUrl);
     } catch (err) {
       console.error("Crop failed:", err);
+      setCropError("Could not confirm this crop. Please try another image or restart the flow.");
     } finally {
       setLoading(false);
     }
@@ -113,6 +139,9 @@ export function ImageCropper({ imageSrc, onConfirm, onCancel }: ImageCropperProp
       <p className="text-xs text-slate-500 text-center">
         Image will be cropped to 1:1 and resized to 1024 × 1024 px
       </p>
+      {cropError && (
+        <p className="text-xs text-red-400 text-center">{cropError}</p>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3">

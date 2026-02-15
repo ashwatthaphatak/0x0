@@ -5,7 +5,12 @@
 // and graceful degradation when running in a browser (dev mode without Tauri).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { ProtectionResult, ProgressUpdate } from "@/types";
+import type {
+  DeepfakeAttackResult,
+  DeepfakeAttackType,
+  ProtectionResult,
+  ProgressUpdate,
+} from "@/types";
 
 // Detect Tauri environment
 export const IS_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -68,6 +73,31 @@ export async function cleanupTempDir(): Promise<void> {
   } catch {
     // Best effort
   }
+}
+
+export async function runLocalDeepfakeTest(
+  originalPath: string,
+  sanitizedPath: string,
+  attackType: DeepfakeAttackType
+): Promise<DeepfakeAttackResult> {
+  const invoke = await getInvoke();
+  const raw = await invoke<{
+    attack_type: string;
+    attack_label: string;
+    original_fake_path: string;
+    sanitized_fake_path: string;
+    divergence: number;
+    verdict: "blocked" | "partial" | "not_blocked" | "unknown";
+  }>("run_local_deepfake_test", { originalPath, sanitizedPath, attackType });
+
+  return {
+    attackType: raw.attack_type as DeepfakeAttackType,
+    attackLabel: raw.attack_label,
+    originalFakePath: raw.original_fake_path,
+    sanitizedFakePath: raw.sanitized_fake_path,
+    divergence: raw.divergence,
+    verdict: raw.verdict ?? "unknown",
+  };
 }
 
 export async function getAppVersion(): Promise<string> {
