@@ -20,12 +20,14 @@ import torch.nn as nn
 import torchvision.transforms as transforms
 from PIL import Image
 
-from defense_core import calculate_metrics, save_image
+from defense_core import save_image
 
 CHECKPOINT_URL = "https://www.dropbox.com/s/7e966qq0nlxwte4/celeba-128x128-5attrs.zip?dl=1"
 CHECKPOINT_REL_PATH = Path("stargan_celeba_128/models/200000-G.ckpt")
 CHECKPOINT_ZIP_NAME = "celeba-128x128-5attrs.zip"
-ATTACK_THRESHOLD = 0.05
+# Divergence is reported as RMSE in [0,1], so thresholds are resolution-independent.
+BLOCKED_RMSE_THRESHOLD = 0.03
+PARTIAL_RMSE_THRESHOLD = 0.015
 DEFAULT_ATTACK_SIZE = 256
 ENV_STARGAN_CKPT = "DEEPFAKE_DEFENSE_STARGAN_CKPT"
 ENV_STARGAN_ZIP = "DEEPFAKE_DEFENSE_STARGAN_ZIP"
@@ -367,12 +369,13 @@ def run_attack_comparison(
     save_image(original_fake, str(original_fake_path))
     save_image(sanitized_fake, str(sanitized_fake_path))
 
-    metrics = calculate_metrics(original_fake, sanitized_fake)
-    divergence = float(metrics["L2"])
+    diff = original_fake - sanitized_fake
+    divergence = float(torch.sqrt(torch.mean(diff.pow(2))).item())
+    l2_distance = float(torch.linalg.vector_norm(diff).item())
 
-    if divergence > ATTACK_THRESHOLD:
+    if divergence > BLOCKED_RMSE_THRESHOLD:
         verdict = "blocked"
-    elif divergence > ATTACK_THRESHOLD * 0.5:
+    elif divergence > PARTIAL_RMSE_THRESHOLD:
         verdict = "partial"
     else:
         verdict = "not_blocked"
@@ -385,5 +388,6 @@ def run_attack_comparison(
         "original_fake_path": str(original_fake_path),
         "sanitized_fake_path": str(sanitized_fake_path),
         "divergence": divergence,
+        "l2_distance": l2_distance,
         "verdict": verdict,
     }

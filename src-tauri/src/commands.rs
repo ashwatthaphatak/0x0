@@ -232,7 +232,7 @@ pub async fn run_local_protection(
     };
 
     let eps  = epsilon.unwrap_or(0.05);
-    let sz   = size.unwrap_or(1024);
+    let sz   = size.unwrap_or(256);
 
     let mut base_cmd = base_engine_command(&app)?;
 
@@ -390,6 +390,20 @@ pub async fn run_local_deepfake_test(
     sanitized_path: String,
     attack_type: String,
 ) -> Result<DeepfakeAttackResult, String> {
+    let original_norm = std::path::Path::new(&original_path)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(&original_path));
+    let sanitized_norm = std::path::Path::new(&sanitized_path)
+        .canonicalize()
+        .unwrap_or_else(|_| std::path::PathBuf::from(&sanitized_path));
+
+    if original_norm == sanitized_norm {
+        return Err(
+            "Deepfake test aborted: original and sanitized paths resolve to the same file."
+                .to_string(),
+        );
+    }
+
     let tmp_dir = state.temp_dir.lock().unwrap().clone();
     let output_dir = format!("{}/attack-{}", tmp_dir, Uuid::new_v4());
     std::fs::create_dir_all(&output_dir)

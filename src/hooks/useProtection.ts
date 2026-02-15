@@ -38,6 +38,8 @@ interface UseProtectionReturn {
   reset:       () => void;
 }
 
+const LOCAL_PROTECTION_SIZE = 256;
+
 export function useProtection({
   mode,
   level,
@@ -89,7 +91,7 @@ export function useProtection({
           });
           unlistenRef.current = unlisten;
           try {
-            const res = await runLocalProtection(input, epsilon);
+            const res = await runLocalProtection(input, epsilon, undefined, LOCAL_PROTECTION_SIZE);
             // Keep direct invoke result as a fallback if complete event was missed.
             setResult(res);
             setState("complete");
