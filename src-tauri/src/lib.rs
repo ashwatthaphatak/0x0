@@ -11,6 +11,7 @@ use commands::{
     get_app_version,
     run_local_deepfake_test,
     run_local_protection,
+    write_temp_input_image,
 };
 use std::sync::Mutex;
 use tauri::{Manager, RunEvent};
@@ -60,6 +61,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             run_local_protection,
             run_local_deepfake_test,
+            write_temp_input_image,
             check_sidecar_ready,
             cleanup_temp_dir,
             get_app_version,

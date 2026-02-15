@@ -26,6 +26,7 @@ CHECKPOINT_URL = "https://www.dropbox.com/s/7e966qq0nlxwte4/celeba-128x128-5attr
 CHECKPOINT_REL_PATH = Path("stargan_celeba_128/models/200000-G.ckpt")
 CHECKPOINT_ZIP_NAME = "celeba-128x128-5attrs.zip"
 ATTACK_THRESHOLD = 0.05
+DEFAULT_ATTACK_SIZE = 256
 ENV_STARGAN_CKPT = "DEEPFAKE_DEFENSE_STARGAN_CKPT"
 ENV_STARGAN_ZIP = "DEEPFAKE_DEFENSE_STARGAN_ZIP"
 
@@ -140,7 +141,8 @@ def resolve_model_root(explicit_dir: str | None = None) -> Path:
     if cache_home:
         return Path(cache_home) / "deepfake-defense"
 
-    return Path.home() / ".cache" / "deepfake-defense"
+    # Keep default consistent with download_stargan_weights.py and Tauri command setup.
+    return Path.home() / ".deepfake-defense-models"
 
 
 def ensure_checkpoint(
@@ -283,11 +285,22 @@ def _load_generator(
     return model
 
 
-def _load_image_128(path: str, device: torch.device) -> torch.Tensor:
-    transform = transforms.Compose(
-        [transforms.Resize((128, 128)), transforms.ToTensor()]
-    )
+def _center_crop_square(image: Image.Image) -> Image.Image:
+    width, height = image.size
+    if width == height:
+        return image
+    side = min(width, height)
+    left = (width - side) // 2
+    top = (height - side) // 2
+    return image.crop((left, top, left + side, top + side))
+
+
+def _load_image(path: str, device: torch.device, size: int) -> torch.Tensor:
+    if size <= 0:
+        raise ValueError(f"attack_size must be > 0 (got {size})")
+    transform = transforms.Compose([transforms.Resize((size, size)), transforms.ToTensor()])
     image = Image.open(path).convert("RGB")
+    image = _center_crop_square(image)
     return transform(image).unsqueeze(0).to(device)
 
 
@@ -310,6 +323,7 @@ def run_attack_comparison(
     output_dir: str,
     progress: Callable[[int, str], None] | None = None,
     model_dir: str | None = None,
+    attack_size: int = DEFAULT_ATTACK_SIZE,
 ) -> dict[str, object]:
     attack_key = normalize_attack_type(attack_type)
 
@@ -334,8 +348,8 @@ def run_attack_comparison(
     )
 
     _update(40, "Loading input images")
-    original_tensor = _load_image_128(original_path, device)
-    sanitized_tensor = _load_image_128(sanitized_path, device)
+    original_tensor = _load_image(original_path, device, size=attack_size)
+    sanitized_tensor = _load_image(sanitized_path, device, size=attack_size)
 
     _update(60, f"Running attack: {ATTACK_LABELS[attack_key]}")
     attribute = torch.tensor([ATTRIBUTES[attack_key]], dtype=torch.float32, device=device)

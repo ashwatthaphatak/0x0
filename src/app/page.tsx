@@ -10,7 +10,13 @@ import { ProgressTracker }           from "@/components/progress-tracker";
 import { ResultViewer }              from "@/components/result-viewer";
 import { AttackTester }              from "@/components/attack-tester";
 import { useProtection }             from "@/hooks/useProtection";
-import { IS_TAURI, cleanupTempDir, getAppVersion, localPathToUrl } from "@/lib/tauri-bridge";
+import {
+  IS_TAURI,
+  cleanupTempDir,
+  getAppVersion,
+  localPathToUrl,
+  writeTempInputImage,
+} from "@/lib/tauri-bridge";
 import type { ComputeMode, ProtectionLevel } from "@/types";
 
 // ─── Types & Constants ────────────────────────────────────────────────────────
@@ -62,6 +68,7 @@ export default function HomePage() {
 
   const [croppedBlob,   setCroppedBlob]   = useState<Blob | null>(null);
   const [croppedUrl,    setCroppedUrl]    = useState<string>("");              // data URL of cropped image
+  const [inputForProtectionPath, setInputForProtectionPath] = useState<string | undefined>();
 
   const [version,       setVersion]       = useState("0.1.0");
 
@@ -86,6 +93,7 @@ export default function HomePage() {
     (file: File | null, nativePath?: string) => {
       setRawFile(file);
       setRawPath(nativePath);
+      setInputForProtectionPath(undefined);
 
       if (file) {
         const url = URL.createObjectURL(file);
@@ -108,6 +116,7 @@ export default function HomePage() {
     (blob: Blob, dataUrl: string) => {
       setCroppedBlob(blob);
       setCroppedUrl(dataUrl);
+      setInputForProtectionPath(undefined);
       setStage("ready");
     },
     []
@@ -118,21 +127,23 @@ export default function HomePage() {
     setStage("processing");
 
     if (mode === "local") {
-      // Prefer native path for local mode (avoids writing the blob back to disk)
-      const path = rawPath ?? null;
-      if (!path) {
-        // No native path: write cropped blob to a temp file via Tauri FS
-        // For simplicity we pass the blob's object URL – the Python engine
-        // cannot read this, so we fall back to a temp write approach.
-        // In production, write the Blob to a temp file using tauri-plugin-fs
-        // and pass that path. For now, show an informative error.
-        alert("Local mode requires a file path. Please re-load the image from disk.");
+      // Always prefer the cropped image for local protection so desktop matches notebook behavior.
+      let pathToProtect: string | undefined;
+      if (croppedBlob) {
+        pathToProtect = await writeTempInputImage(croppedBlob);
+      } else if (rawPath) {
+        pathToProtect = rawPath;
+      }
+
+      if (!pathToProtect) {
+        alert("Could not resolve an input file for local mode. Please re-load and crop the image.");
         setStage("ready");
         return;
       }
 
       try {
-        await protect(path);
+        setInputForProtectionPath(pathToProtect);
+        await protect(pathToProtect);
         setStage("complete");
       } catch {
         setStage("error");
@@ -162,6 +173,7 @@ export default function HomePage() {
     setRawPreviewUrl("");
     setCroppedBlob(null);
     setCroppedUrl("");
+    setInputForProtectionPath(undefined);
     setStage("upload");
     resetProtection();
   }, [rawPreviewUrl, croppedUrl, resetProtection]);
@@ -182,7 +194,7 @@ export default function HomePage() {
   }, [processingState]);
 
   const isProcessing = stage === "processing";
-  const comparisonOriginal = mode === "local" ? (rawPreviewUrl || croppedUrl) : croppedUrl;
+  const comparisonOriginal = croppedUrl || rawPreviewUrl;
 
   // ─────────────────────────────────────────────────────────────────────────────
   return (
@@ -372,7 +384,7 @@ export default function HomePage() {
                 onReset={handleReset}
               />
               <AttackTester
-                originalPath={rawPath}
+                originalPath={inputForProtectionPath ?? rawPath}
                 sanitizedPath={result.outputPath}
                 isLocalResult={result.isLocal}
               />

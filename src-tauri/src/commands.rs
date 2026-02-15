@@ -6,6 +6,7 @@
 use crate::AppState;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::io::{BufRead, BufReader};
 use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -423,6 +424,7 @@ pub async fn run_local_deepfake_test(
             "--input", &original_path,
             "--protected", &sanitized_path,
             "--attack-type", &attack_type,
+            "--attack-size", "256",
             "--output-dir", &output_dir,
         ])
         .stdout(Stdio::piped())
@@ -539,6 +541,23 @@ pub async fn run_local_deepfake_test(
             stderr_tail_message(&stderr_tail)
         )
     })
+}
+
+#[tauri::command]
+pub async fn write_temp_input_image(
+    state: State<'_, AppState>,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    if bytes.is_empty() {
+        return Err("Input image bytes are empty".to_string());
+    }
+
+    let tmp_dir = state.temp_dir.lock().unwrap().clone();
+    let filename = format!("input-{}.png", Uuid::new_v4());
+    let path = std::path::Path::new(&tmp_dir).join(filename);
+
+    fs::write(&path, bytes).map_err(|e| format!("Failed to write temp input image: {e}"))?;
+    Ok(path.to_string_lossy().to_string())
 }
 
 /// Ping the sidecar to verify it can be executed (returns version string).
