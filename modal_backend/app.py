@@ -24,18 +24,19 @@ image = (
         "torch==2.2.2",
         "torchvision==0.17.2",
         "torchaudio==2.2.2",
-        index_url="https://download.pytorch.org/whl/cpu",
+        index_url="https://download.pytorch.org/whl/cu121",  # CUDA only
     )
     .pip_install(
-        "opencv-python-headless>=4.8.0",
-        "scikit-image>=0.22.0",
-        "Pillow>=10.0.0",
-        "numpy>=1.24.0",
-        "scipy>=1.11.0",
-        "lpips>=0.1.4",
-        "fastapi[standard]>=0.111.0",
-        "python-multipart>=0.0.9",
-        "anyio>=4.0",
+    "opencv-python-headless>=4.8.0",
+    "scikit-image>=0.22.0",
+    "Pillow>=10.0.0",
+    "numpy<2",           # ← pin to NumPy 1.x, compatible with torch 2.2.2
+    "scipy>=1.11.0",
+    "lpips>=0.1.4",
+    "requests>=2.31.0",  # ← ADD THIS
+    "fastapi[standard]>=0.111.0",
+    "python-multipart>=0.0.9",
+    "anyio>=4.0",
     )
     .add_local_file("python_engine/defense_core.py", "/app/defense_core.py")
 )
